@@ -1,280 +1,53 @@
 /**
  * BACKGROUND SERVICE WORKER
- * 
- * Core enforcement engine for Block2Redirect. Handles all site blocking and redirection.
- * 
- * Main Features:
- * 1. Tab Update Listener (chrome.tabs.onUpdated)
- *    - Intercepts page loads on blocked sites
- *    - Checks against focusMode before enforcing
- *    - Applies session/timer mode gating
- *    - Handles punishment mode (force to leetcode)
- * 
- * 2. Blocked Site Detection
- *    - Matches active blockedSites array from storage
- *    - Falls back to legacy rules if needed
- *    - Supports hostname matching with subdomain support
- * 
- * 3. Redirection Logic
- *    - Per-site mappings (highest priority)
- *    - Random productive site rotation (if enabled)
- *    - Default productive site (fallback)
- *    - Force mode override (site-agnostic redirect)
- * 
- * 4. Tracking & Punishment
- *    - trackAttempt(site): Count per-site block attempts in local storage
- *    - trackBlock(site): Count per-site successful blocks
- *    - shouldPunish(site, threshold): Determine if punishment mode applies
- *    - Punishment redirects to the default productive site
- * 
- * 5. Session Timer Mode
- *    - Respects work/break phases
- *    - Auto-phases when phase.endsAt < now
- *    - Blocks only during work phase
- *    - Extends schedule to next day if overnight
- * 
- * 6. Schedule Support
- *    - Rules can specify start:end times (e.g., "09:00":"18:00")
- *    - Supports overnight ranges (e.g., "23:00":"06:00")
- *    - Blocks only within active schedule
- * 
- * Storage Schema:
- * - sync:
- *   - focusMode: bool (master on/off)
- *   - blockedSites: string[] (hostnames)
- *   - siteMappings: { [host]: redirectUrl }
- *   - rules: legacy [{ block, redirect, start?, end? }]
- *   - timerMode: bool (enable session timer)
- *   - punishmentMode: bool (enable punishment on attempts)
- *   - punishThreshold: number (attempts before punishment)
- *   - sessionState: { isActive, phase, startedAt, endsAt }
- * - local:
- *   - stats: { [site]: blockCount } (for UI stats)
- *   - attempts: { [site]: attemptCount } (for punishment logic)
+ *
+ * Core enforcement engine + toolkit message router (GitHub sync, job tracker).
  */
 
-const DEFAULT_PRODUCTIVE_SITES = [
-    "https://developer.mozilla.org",
-    "https://github.com/trending",
-    "https://www.indeed.com"
-];
-
-const DEFAULT_SESSION_CONFIG = {
-    workMinutes: 25,
-    breakMinutes: 5
-};
-
-function ensureUrl(value) {
-
-    if (!value) return "";
-
-    const trimmed = value.trim();
-
-    if (!trimmed) return "";
-
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-
-    return `https://${trimmed}`;
-
-}
-
-function normalizeHost(value) {
-
-    if (!value) return "";
-
-    let host = value.trim().toLowerCase();
-
-    host = host.replace(/^https?:\/\//, "");
-    host = host.replace(/^www\./, "");
-    host = host.split("/")[0];
-
-    return host;
-
-}
-
-function hostMatches(hostname, target) {
-
-    const normalizedHost = normalizeHost(hostname);
-    const normalizedTarget = normalizeHost(target);
-
-    if (!normalizedHost || !normalizedTarget) return false;
-
-    return (
-        normalizedHost === normalizedTarget ||
-        normalizedHost.endsWith(`.${normalizedTarget}`)
-    );
-
-}
-
-function isWithinSchedule(start, end) {
-
-    const now = new Date();
-    let minutes = now.getHours() * 60 + now.getMinutes();
-
-    const [sh, sm] = (start || "00:00").split(":").map(Number);
-    const [eh, em] = (end || "23:59").split(":").map(Number);
-
-    const startMin = sh * 60 + sm;
-    let endMin = eh * 60 + em;
-
-    // Support overnight windows, e.g. 23:00 -> 06:00.
-    if (endMin < startMin) {
-        endMin += 24 * 60;
-        if (minutes < startMin) {
-            minutes += 24 * 60;
-        }
-    }
-
-    return minutes >= startMin && minutes <= endMin;
-
-}
+importScripts(
+    "util/constants.js",
+    "util/helpers.js",
+    "util/storage.js",
+    "util/validation.js",
+    "util/github.js",
+    "util/sheets.js"
+);
 
 function trackBlock(site) {
-
     chrome.storage.local.get(["stats"], (data) => {
-
         const stats = data.stats || {};
-
         stats[site] = (stats[site] || 0) + 1;
-
         chrome.storage.local.set({ stats });
-
     });
-
 }
 
 function trackAttempt(site) {
-
     chrome.storage.local.get(["attempts"], (data) => {
-
         const attempts = data.attempts || {};
-
         attempts[site] = (attempts[site] || 0) + 1;
-
         chrome.storage.local.set({ attempts });
-
     });
-
 }
 
 function shouldPunish(site, threshold, callback) {
-
     chrome.storage.local.get(["attempts"], (data) => {
-
         const attempts = data.attempts || {};
-
         callback((attempts[site] || 0) >= threshold);
-
     });
-
 }
 
-function resolveSessionState(sessionState, sessionConfig) {
-
-    if (!sessionState || !sessionState.isActive) {
-        return sessionState || { isActive: false, phase: "work", endsAt: 0 };
+function shouldEnforceBlock(timerMode, sessionState, sessionConfig, dailySolves) {
+    // Solve ↔ redirect crossover: if no solves today, always enforce when focus is on
+    if (Number(dailySolves) === 0) {
+        return true;
     }
-
-    const now = Date.now();
-    const resolved = {
-        ...sessionState,
-        phase: sessionState.phase === "break" ? "break" : "work"
-    };
-
-    const safeConfig = {
-        workMinutes: Number(sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
-        breakMinutes: Number(sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
-    };
-
-    let guard = 0;
-
-    while (resolved.endsAt && now >= resolved.endsAt && guard < 10) {
-
-        if (resolved.phase === "work") {
-            resolved.phase = "break";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.breakMinutes * 60 * 1000;
-        } else {
-            resolved.phase = "work";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.workMinutes * 60 * 1000;
-        }
-
-        guard += 1;
-
-    }
-
-    if (!resolved.endsAt) {
-        resolved.isActive = false;
-    }
-
-    return resolved;
-
-}
-
-function shouldEnforceBlock(timerMode, sessionState, sessionConfig) {
-
     if (!timerMode) return true;
-
     const resolved = resolveSessionState(sessionState, sessionConfig);
-
     if (!resolved.isActive) return false;
-
     return resolved.phase === "work";
-
-}
-
-function migrateLegacyRules(settings, callback) {
-
-    const hasNewSchema = Array.isArray(settings.blockedSites);
-
-    if (hasNewSchema) {
-        callback(settings);
-        return;
-    }
-
-    const rules = settings.rules || [];
-    const blockedSites = [];
-    const productiveSites = [...DEFAULT_PRODUCTIVE_SITES];
-    const siteMappings = {};
-
-    rules.forEach((rule) => {
-
-        const blocked = normalizeHost(rule.block);
-        const redirect = ensureUrl(rule.redirect);
-
-        if (blocked && !blockedSites.includes(blocked)) {
-            blockedSites.push(blocked);
-        }
-
-        if (blocked && redirect && !siteMappings[blocked]) {
-            siteMappings[blocked] = redirect;
-        }
-
-        if (redirect && !productiveSites.includes(redirect)) {
-            productiveSites.push(redirect);
-        }
-
-    });
-
-    const patch = {
-        blockedSites,
-        productiveSites,
-        siteMappings,
-        defaultProductiveSite: productiveSites.includes(ensureUrl(settings.defaultProductiveSite))
-            ? ensureUrl(settings.defaultProductiveSite)
-            : productiveSites[0] || DEFAULT_PRODUCTIVE_SITES[0],
-        sessionConfig: settings.sessionConfig || DEFAULT_SESSION_CONFIG,
-        sessionState: settings.sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 },
-        timerMode: settings.timerMode ?? false
-    };
-
-    chrome.storage.sync.set(patch, () => callback({ ...settings, ...patch }));
-
 }
 
 function chooseRedirectUrl(settings, blockedSite, legacyRule) {
-
     const siteMappings = settings.siteMappings || {};
     const productiveSites = (settings.productiveSites || []).map(ensureUrl).filter(Boolean);
     const mapped = ensureUrl(siteMappings[blockedSite]);
@@ -285,37 +58,22 @@ function chooseRedirectUrl(settings, blockedSite, legacyRule) {
     const validLegacyRedirect = legacyRedirect && productiveSites.includes(legacyRedirect);
     const forceURL = ensureUrl(settings.forceURL);
 
-    let redirectURL = "";
-
-    if (settings.forceMode && forceURL) {
-        redirectURL = forceURL;
-    } else if (validMapped) {
-        redirectURL = mapped;
-    } else if (settings.randomMode && productiveSites.length > 0) {
-        const randomIndex = Math.floor(Math.random() * productiveSites.length);
-        redirectURL = productiveSites[randomIndex];
-    } else if (hasValidDefault) {
-        redirectURL = defaultProductiveSite;
-    } else if (validLegacyRedirect) {
-        redirectURL = legacyRedirect;
-    } else if (productiveSites.length > 0) {
-        redirectURL = productiveSites[0];
-    } else {
-        redirectURL = DEFAULT_PRODUCTIVE_SITES[0];
+    if (settings.forceMode && forceURL) return forceURL;
+    if (validMapped) return mapped;
+    if (settings.randomMode && productiveSites.length > 0) {
+        return productiveSites[Math.floor(Math.random() * productiveSites.length)];
     }
-
-    return redirectURL;
-
+    if (hasValidDefault) return defaultProductiveSite;
+    if (validLegacyRedirect) return legacyRedirect;
+    if (productiveSites.length > 0) return productiveSites[0];
+    return DEFAULT_PRODUCTIVE_SITES[0];
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-
     if (changeInfo.status !== "loading") return;
-
     if (!tab.url || !/^https?:/i.test(tab.url)) return;
 
     let tabHostname = "";
-
     try {
         tabHostname = new URL(tab.url).hostname;
     } catch (_error) {
@@ -338,9 +96,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         "sessionConfig",
         "sessionState"
     ], (rawSettings) => {
-
-        migrateLegacyRules(rawSettings, (settings) => {
-
+        migrateLegacySettings(rawSettings, (settings) => {
             if (settings.focusMode === false) return;
 
             const blockedSites = settings.blockedSites || [];
@@ -356,7 +112,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                         isWithinSchedule(rule.start, rule.end)
                     );
                 }) || null;
-
                 if (matchedRule) {
                     blockedSite = normalizeHost(matchedRule.block);
                 }
@@ -374,32 +129,329 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                 chrome.storage.sync.set({ sessionState });
             }
 
-            if (!shouldEnforceBlock(settings.timerMode, sessionState, settings.sessionConfig)) {
-                return;
-            }
-
-            trackAttempt(blockedSite);
-
-            shouldPunish(blockedSite, settings.punishThreshold || 5, (punish) => {
-
-                let redirectURL = chooseRedirectUrl(settings, blockedSite, matchedRule);
-
-                if (punish && settings.punishmentMode) {
-                    redirectURL = DEFAULT_PRODUCTIVE_SITES[0];
-                }
-
-                if (!redirectURL || tab.url.startsWith(redirectURL)) {
+            getDailyStats((daily) => {
+                if (!shouldEnforceBlock(
+                    settings.timerMode,
+                    sessionState,
+                    settings.sessionConfig,
+                    daily.solves
+                )) {
                     return;
                 }
 
-                chrome.tabs.update(tabId, { url: redirectURL });
+                trackAttempt(blockedSite);
 
-                trackBlock(blockedSite);
+                shouldPunish(blockedSite, settings.punishThreshold || 5, (punish) => {
+                    let redirectURL = chooseRedirectUrl(settings, blockedSite, matchedRule);
 
+                    if (punish && settings.punishmentMode) {
+                        redirectURL = DEFAULT_PRODUCTIVE_SITES[0];
+                    }
+
+                    if (!redirectURL || tab.url.startsWith(redirectURL)) {
+                        return;
+                    }
+
+                    chrome.tabs.update(tabId, { url: redirectURL });
+                    trackBlock(blockedSite);
+                });
             });
-
         });
-
     });
+});
 
+/** Handle a detected solve: cache, optionally push, bump daily stats */
+async function handleSolveDetected(problem, options = {}) {
+    const forcePush = Boolean(options.forcePush);
+    const countSolve = options.countSolve !== false;
+
+    await new Promise((resolve) => cacheLastSolve(problem, resolve));
+    if (countSolve) {
+        await new Promise((resolve) => incrementDailyStat("solves", resolve));
+    }
+
+    const config = await new Promise((resolve) => getGitHubConfig(resolve));
+    const shouldPush = forcePush || config.autoPush;
+    if (!shouldPush || !config.token || !config.repo) {
+        return { cached: true, pushed: false };
+    }
+
+    const result = await pushToGitHub(problem);
+    await new Promise((resolve) => incrementDailyStat("commits", resolve));
+    return { cached: true, pushed: true, ...result };
+}
+
+async function handleSaveJob(row, options = {}) {
+    if (!options.skipDuplicateCheck) {
+        const dup = await isDuplicateJob(row.link, row.company, row.role);
+        if (dup.duplicate) {
+            return { ok: false, duplicate: true, reason: dup.reason };
+        }
+    }
+    await appendApplication(row);
+    await new Promise((resolve) => incrementDailyStat("apps", resolve));
+    return { ok: true };
+}
+
+async function pollCodeforces() {
+    const state = await new Promise((resolve) => getCodeforcesState(resolve));
+    if (!state.handle) return;
+
+    const res = await fetch(
+        `https://api.codeforces.com/api/user.status?handle=${encodeURIComponent(state.handle)}&from=1&count=20`
+    );
+    const data = await res.json();
+    if (data.status !== "OK" || !Array.isArray(data.result)) return;
+
+    const accepted = data.result
+        .filter((s) => s.verdict === "OK")
+        .sort((a, b) => a.id - b.id);
+
+    let maxId = state.lastSubmissionId || 0;
+    for (const sub of accepted) {
+        if (sub.id <= (state.lastSubmissionId || 0)) continue;
+        maxId = Math.max(maxId, sub.id);
+
+        let code = "";
+        try {
+            const pageRes = await fetch(`https://codeforces.com/contest/${sub.contestId}/submission/${sub.id}`);
+            const html = await pageRes.text();
+            const match = html.match(/<pre[^>]*id="program-source-text"[^>]*>([\s\S]*?)<\/pre>/i)
+                || html.match(/<pre[^>]*class="[^"]*prettyprint[^"]*"[^>]*>([\s\S]*?)<\/pre>/i);
+            if (match) {
+                code = match[1]
+                    .replace(/&lt;/g, "<")
+                    .replace(/&gt;/g, ">")
+                    .replace(/&amp;/g, "&")
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#39;/g, "'");
+            }
+        } catch (_err) {
+            code = `// Source unavailable for submission ${sub.id}\n`;
+        }
+
+        const problem = {
+            platform: "codeforces",
+            title: sub.problem?.name || `${sub.contestId}${sub.problem?.index || ""}`,
+            slug: slugify(sub.problem?.name || String(sub.id)),
+            contestId: sub.contestId,
+            problemIndex: sub.problem?.index || "",
+            language: sub.programmingLanguage || "cpp",
+            code,
+            url: `https://codeforces.com/contest/${sub.contestId}/problem/${sub.problem?.index || ""}`,
+            id: sub.id
+        };
+
+        try {
+            await handleSolveDetected(problem);
+        } catch (_pushErr) {
+            await new Promise((resolve) => cacheLastSolve(problem, resolve));
+        }
+    }
+
+    if (maxId > (state.lastSubmissionId || 0)) {
+        await new Promise((resolve) => setCodeforcesState({ lastSubmissionId: maxId }, resolve));
+    }
+}
+
+async function checkFollowUpReminders() {
+    const followUps = await new Promise((resolve) => getFollowUpState(resolve));
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const stale = followUps.filter(
+        (e) => e.status === "Applied" && Date.now() - (e.appliedAt || 0) >= weekMs
+    );
+    if (stale.length === 0) {
+        chrome.action.setBadgeText({ text: "" });
+        return;
+    }
+    chrome.action.setBadgeBackgroundColor({ color: "#f59e0b" });
+    chrome.action.setBadgeText({ text: String(Math.min(stale.length, 99)) });
+    chrome.notifications.create("job-followups", {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL("icons/icon128.png"),
+        title: "Job follow-ups due",
+        message: `${stale.length} application(s) need a status update (7+ days).`
+    });
+}
+
+chrome.alarms.create("codeforces-poll", { periodInMinutes: 5 });
+chrome.alarms.create("followup-check", { periodInMinutes: 60 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === "codeforces-poll") {
+        pollCodeforces().catch(() => {});
+    }
+    if (alarm.name === "followup-check") {
+        checkFollowUpReminders().catch(() => {});
+    }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    const type = message?.type;
+    if (!type) return false;
+
+    const reply = (promise) => {
+        promise
+            .then((result) => sendResponse({ ok: true, result }))
+            .catch((error) => sendResponse({ ok: false, error: error.message || String(error) }));
+        return true;
+    };
+
+    switch (type) {
+        case "SOLVE_DETECTED":
+            return reply(handleSolveDetected(message.problem, { forcePush: false, countSolve: true }));
+
+        case "PUSH_LAST_SOLVE":
+            return reply((async () => {
+                const last = await new Promise((resolve) => getLastSolve(resolve));
+                if (!last) throw new Error("No recent solve cached");
+                return handleSolveDetected(last, { forcePush: true, countSolve: false });
+            })());
+
+        case "PUSH_SOLVE":
+            return reply(handleSolveDetected(message.problem, { forcePush: true, countSolve: false }));
+
+        case "GET_SYNC_STATUS":
+            return reply((async () => {
+                const [github, sheets, daily, lastSolve, cf, followUps] = await Promise.all([
+                    new Promise((resolve) => getGitHubConfig(resolve)),
+                    new Promise((resolve) => getSheetsConfig(resolve)),
+                    new Promise((resolve) => getDailyStats(resolve)),
+                    new Promise((resolve) => getLastSolve(resolve)),
+                    new Promise((resolve) => getCodeforcesState(resolve)),
+                    new Promise((resolve) => getFollowUpState(resolve))
+                ]);
+                const weekMs = 7 * 24 * 60 * 60 * 1000;
+                const staleFollowUps = followUps.filter(
+                    (e) => e.status === "Applied" && Date.now() - (e.appliedAt || 0) >= weekMs
+                );
+                return {
+                    githubConnected: Boolean(github.token),
+                    githubUser: github.user,
+                    githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
+                    githubAutoPush: github.autoPush,
+                    sheetsConnected: Boolean(sheets.accessToken),
+                    spreadsheetId: sheets.spreadsheetId,
+                    spreadsheetUrl: sheets.spreadsheetUrl,
+                    jobAppGoal: sheets.jobAppGoal,
+                    daily,
+                    lastSolve,
+                    cfHandle: cf.handle,
+                    staleFollowUps: staleFollowUps.length
+                };
+            })());
+
+        case "GITHUB_START_DEVICE_CODES":
+            return reply((async () => {
+                const device = await startGitHubDeviceFlow();
+                // Keep device code in session for poll message
+                await new Promise((resolve) => setSession({
+                    githubDeviceCode: device.device_code,
+                    githubDeviceInterval: device.interval,
+                    githubDeviceExpires: device.expires_in
+                }, resolve));
+                return {
+                    userCode: device.user_code,
+                    verificationUri: device.verification_uri || "https://github.com/login/device"
+                };
+            })());
+
+        case "GITHUB_POLL_DEVICE":
+            return reply((async () => {
+                const sess = await new Promise((resolve) => getSession([
+                    "githubDeviceCode",
+                    "githubDeviceInterval",
+                    "githubDeviceExpires"
+                ], resolve));
+                if (!sess.githubDeviceCode) throw new Error("No pending GitHub device auth");
+                const token = await pollGitHubDeviceToken(
+                    sess.githubDeviceCode,
+                    sess.githubDeviceInterval,
+                    sess.githubDeviceExpires
+                );
+                await new Promise((resolve) => setGitHubConfig({ token }, resolve));
+                const user = await fetchGitHubUser();
+                await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
+                await new Promise((resolve) => setSession({
+                    githubDeviceCode: null,
+                    githubDeviceInterval: null,
+                    githubDeviceExpires: null
+                }, resolve));
+                return { user };
+            })());
+
+        case "GITHUB_LIST_REPOS":
+            return reply(listGitHubRepos());
+
+        case "GITHUB_CREATE_REPO":
+            return reply((async () => {
+                const repo = await createGitHubRepo(message.name, Boolean(message.private));
+                await new Promise((resolve) => setGitHubConfig({
+                    owner: repo.owner.login,
+                    repo: repo.name
+                }, resolve));
+                return repo;
+            })());
+
+        case "GITHUB_SET_REPO":
+            return reply((async () => {
+                await new Promise((resolve) => setGitHubConfig({
+                    owner: message.owner,
+                    repo: message.repo
+                }, resolve));
+                return { owner: message.owner, repo: message.repo };
+            })());
+
+        case "GITHUB_SET_AUTO":
+            return reply((async () => {
+                await new Promise((resolve) => setGitHubConfig({ autoPush: Boolean(message.autoPush) }, resolve));
+                return { autoPush: Boolean(message.autoPush) };
+            })());
+
+        case "GITHUB_DISCONNECT":
+            return reply((async () => {
+                await new Promise((resolve) => clearGitHubAuth(resolve));
+                return { disconnected: true };
+            })());
+
+        case "GOOGLE_CONNECT":
+            return reply(connectGoogle());
+
+        case "GOOGLE_DISCONNECT":
+            return reply((async () => {
+                await new Promise((resolve) => clearGoogleAuth(resolve));
+                return { disconnected: true };
+            })());
+
+        case "SHEETS_LINK":
+            return reply(linkSpreadsheet(message.urlOrId));
+
+        case "SAVE_JOB":
+            return reply(handleSaveJob(message.job || {}, { skipDuplicateCheck: message.force }));
+
+        case "CHECK_JOB_DUPLICATE":
+            return reply(isDuplicateJob(message.link, message.company, message.role));
+
+        case "SET_CF_HANDLE":
+            return reply((async () => {
+                await new Promise((resolve) => setCodeforcesState({ handle: message.handle || "" }, resolve));
+                pollCodeforces().catch(() => {});
+                return { handle: message.handle || "" };
+            })());
+
+        case "SET_JOB_GOAL":
+            return reply((async () => {
+                await new Promise((resolve) => setSheetsConfig({
+                    jobAppGoal: Math.max(1, Number(message.goal) || 5)
+                }, resolve));
+                return { jobAppGoal: Math.max(1, Number(message.goal) || 5) };
+            })());
+
+        case "POLL_CODEFORCES":
+            return reply(pollCodeforces().then(() => ({ polled: true })));
+
+        default:
+            sendResponse({ ok: false, error: `Unknown message type: ${type}` });
+            return false;
+    }
 });

@@ -8,31 +8,27 @@
 </head>
 
 <body>
-    <!-- 
-        POPUP MAIN INTERFACE
-        
-        This popup provides quick access to block the current site or add sites to the blocklist.
-        
-        Key Features:
-        - Input field to manually enter a site to block
-        - "Block Current Site" button to instantly block the active tab's site
-        - "Add Blocked Site" button to add manually entered sites after validation
-        - Status message area showing validation/success feedback
-        - List of blocked sites with remove buttons
-        - Settings gear icon to open the full settings page
-        
-        Site Validation:
-        - Performs network reachability check (HTTP GET to validate site exists)
-        - Normalizes domains (strips www, protocol, subpaths)
-        - Rejects empty or malformed input
-        - Automatically shortcuts current tab URL to bypass manual entry
-        
-        Current-Tab Blocking:
-        - Immediately redirects if the blocked site is the active tab
-        - Uses favicon from the tab or falls back to Google Favicons API
-    -->
-
     <h1>Block2Redirect</h1>
+
+    <section class="dashboard-strip" aria-label="Today's progress">
+        <div class="dash-item">
+            <span class="dash-value" id="dashSolves">0</span>
+            <span class="dash-label">Solves</span>
+        </div>
+        <div class="dash-item">
+            <span class="dash-value" id="dashApps">0</span>
+            <span class="dash-label">Apps</span>
+        </div>
+        <div class="dash-item">
+            <span class="dash-value" id="dashCommits">0</span>
+            <span class="dash-label">Commits</span>
+        </div>
+        <div class="dash-item dash-goal">
+            <span class="dash-value" id="dashGoal">0/5</span>
+            <span class="dash-label">App goal</span>
+        </div>
+    </section>
+    <p id="followUpBanner" class="status-text" hidden></p>
 
     <h3>Block Site</h3>
 
@@ -48,9 +44,18 @@
 
     <ul id="blockedSitesList"></ul>
 
+    <h3>Toolkit</h3>
+    <div class="button-row">
+        <button id="pushLastSolve" type="button" class="secondary">Push last solve</button>
+        <button id="saveThisJob" type="button" class="secondary">Save this job</button>
+    </div>
+
     <button id="settingsButton" class="settings-button" aria-label="Settings" title="Settings">⚙️</button>
 
+    <script src="../util/constants.js"></script>
+    <script src="../util/helpers.js"></script>
+    <script src="../util/storage.js"></script>
+    <script src="../util/validation.js"></script>
     <script src="popup.js"></script>
-
 </body>
 </html>

@@ -112,6 +112,35 @@ button.danger{
 	color:white;
 }
 
+button.secondary{
+	background:#0f172a;
+	color:#e2e8f0;
+	border-color:#334155;
+}
+
+.status-text[data-kind="error"]{
+	color:#fca5a5;
+}
+
+.status-text[data-kind="success"]{
+	color:#86efac;
+}
+
+.github-panel input,
+.sheets-panel input{
+	flex:1;
+	padding:8px;
+	border:1px solid #334155;
+	background:#111827;
+	color:#f8fafc;
+	border-radius:6px;
+	font-size:14px;
+}
+
+.github-panel a{
+	color:#22D3EE;
+}
+
 .sites-grid{
 	list-style:none;
 	padding:0;

@@ -1,50 +1,8 @@
 /**
  * SETTINGS PAGE SCRIPT
- * 
- * Comprehensive configuration interface for Block2Redirect.
- * 
- * Main Functions:
- * - renderState(): Fetches storage and renders all panels (sites, toggles, session state)
- * - renderBlockedSites(): Card grid with favicons from blockedSiteMeta
- * - renderProductiveSites(): Card grid of redirect targets
- * - renderMappings(): List of blocked → productive mappings with dropdowns
- * - loadStats(): Ranked list of blocked attempts from local storage
- * 
- * Event Handlers:
- * - addBlockedSite/addProductiveSite: Add with normalization
- * - removeBlockedSite/removeProductiveSite: Remove and clean mappings
- * - saveMapping/saveDefaultProductive/saveThreshold: Persist config changes
- * - startSession/stopSession: Manage timer mode phases
- * 
- * Toggle Handlers (no buttons needed):
- * - focusToggle, randomToggle, punishToggle, timerToggle: Direct onchange → storage.sync.set()
- * 
- * Storage Listeners:
- * - chrome.storage.onChanged: Re-render on any config change
- * - setInterval(renderState, 1000): Update session timer display every second
- * 
- * Session State Resolution:
- * - Auto-advances work→break→work phases
- * - Guards against infinite loops (max 10 phases per call)
- * - Stores resolved state back to sync if needed
+ *
+ * Site management, modes/timer, GitHub sync, and Google Sheets job tracker.
  */
-
-const DEFAULT_PRODUCTIVE_SITES = [
-    "https://www.indeed.com",
-    "https://stackoverflow.com"
-];
-
-const DEFAULT_SESSION_CONFIG = {
-    workMinutes: 25,
-    breakMinutes: 5
-};
-
-const DEFAULT_FAVICON_FALLBACK = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-        <rect width="64" height="64" rx="12" fill="#0f172a"/>
-        <path d="M20 18h24a6 6 0 0 1 6 6v16a6 6 0 0 1-6 6H28l-8 8V24a6 6 0 0 1 6-6Z" fill="#22d3ee"/>
-    </svg>
-`);
 
 const blockedSiteInput = document.getElementById("blockedSiteInput");
 const addBlockedBtn = document.getElementById("addBlockedBtn");
@@ -74,119 +32,39 @@ const sessionStatus = document.getElementById("sessionStatus");
 
 const statsList = document.getElementById("statsList");
 
-function ensureUrl(value) {
-    if (!value) return "";
-    const trimmed = value.trim();
-    if (!trimmed) return "";
-    if (/^https?:\/\//i.test(trimmed)) return trimmed;
-    return `https://${trimmed}`;
-}
+const githubStatus = document.getElementById("githubStatus");
+const githubDeviceHint = document.getElementById("githubDeviceHint");
+const githubConnectBtn = document.getElementById("githubConnectBtn");
+const githubDisconnectBtn = document.getElementById("githubDisconnectBtn");
+const githubRepoSelect = document.getElementById("githubRepoSelect");
+const githubRefreshReposBtn = document.getElementById("githubRefreshReposBtn");
+const githubNewRepoInput = document.getElementById("githubNewRepoInput");
+const githubCreateRepoBtn = document.getElementById("githubCreateRepoBtn");
+const githubAutoPushToggle = document.getElementById("githubAutoPushToggle");
+const cfHandleInput = document.getElementById("cfHandleInput");
+const cfHandleSaveBtn = document.getElementById("cfHandleSaveBtn");
 
-function normalizeHost(value) {
-    if (!value) return "";
-    let host = value.trim().toLowerCase();
-    host = host.replace(/^https?:\/\//, "");
-    host = host.replace(/^www\./, "");
-    host = host.split("/")[0];
-    return host;
-}
+const sheetsStatus = document.getElementById("sheetsStatus");
+const googleConnectBtn = document.getElementById("googleConnectBtn");
+const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
+const sheetUrlInput = document.getElementById("sheetUrlInput");
+const sheetLinkBtn = document.getElementById("sheetLinkBtn");
+const jobGoalInput = document.getElementById("jobGoalInput");
+const jobGoalSaveBtn = document.getElementById("jobGoalSaveBtn");
 
-function getFaviconUrl(host, sourceUrl = "") {
-    if (host) {
-        return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
-    }
-    return DEFAULT_FAVICON_FALLBACK;
-}
-
-function pickDefaultProductiveSite(defaultProductiveSite, productiveSites) {
-    const normalizedSites = (productiveSites || []).map(ensureUrl).filter(Boolean);
-    const storedDefault = ensureUrl(defaultProductiveSite);
-    if (storedDefault && normalizedSites.includes(storedDefault)) {
-        return storedDefault;
-    }
-    return normalizedSites[0] || DEFAULT_PRODUCTIVE_SITES[0];
-}
-
-function formatTimeLeft(ms) {
-    const safeMs = Math.max(0, ms);
-    const totalSeconds = Math.floor(safeMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function resolveSessionState(sessionState, sessionConfig) {
-    if (!sessionState || !sessionState.isActive) {
-        return sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 };
-    }
-    const now = Date.now();
-    const resolved = {
-        ...sessionState,
-        phase: sessionState.phase === "break" ? "break" : "work"
-    };
-    const safeConfig = {
-        workMinutes: Number(sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
-        breakMinutes: Number(sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
-    };
-    let guard = 0;
-    while (resolved.endsAt && now >= resolved.endsAt && guard < 10) {
-        if (resolved.phase === "work") {
-            resolved.phase = "break";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.breakMinutes * 60 * 1000;
-        } else {
-            resolved.phase = "work";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.workMinutes * 60 * 1000;
-        }
-        guard += 1;
-    }
-    return resolved;
-}
-
-function migrateLegacyRules(callback) {
-    chrome.storage.sync.get([
-        "rules",
-        "blockedSites",
-        "productiveSites",
-        "siteMappings",
-        "defaultProductiveSite",
-        "sessionConfig",
-        "sessionState",
-        "timerMode",
-        "blockedSiteMeta"
-    ], (data) => {
-        if (Array.isArray(data.blockedSites)) {
-            callback();
-            return;
-        }
-        const rules = data.rules || [];
-        const blockedSites = [];
-        const productiveSites = [...DEFAULT_PRODUCTIVE_SITES];
-        const siteMappings = {};
-        rules.forEach((rule) => {
-            const blocked = normalizeHost(rule.block);
-            const redirect = ensureUrl(rule.redirect);
-            if (blocked && !blockedSites.includes(blocked)) {
-                blockedSites.push(blocked);
+function sendMessage(message) {
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
             }
-            if (redirect && !productiveSites.includes(redirect)) {
-                productiveSites.push(redirect);
+            if (!response?.ok) {
+                reject(new Error(response?.error || "Request failed"));
+                return;
             }
-            if (blocked && redirect && !siteMappings[blocked]) {
-                siteMappings[blocked] = redirect;
-            }
+            resolve(response.result);
         });
-        chrome.storage.sync.set({
-            blockedSites,
-            productiveSites,
-            siteMappings,
-            blockedSiteMeta: data.blockedSiteMeta || {},
-            defaultProductiveSite: pickDefaultProductiveSite(data.defaultProductiveSite, productiveSites),
-            sessionConfig: data.sessionConfig || DEFAULT_SESSION_CONFIG,
-            sessionState: data.sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 },
-            timerMode: data.timerMode ?? false
-        }, callback);
     });
 }
 
@@ -234,7 +112,6 @@ function renderState() {
             chrome.storage.sync.set({ defaultProductiveSite });
         }
 
-        // Render blocked sites as cards
         blockedSitesList.innerHTML = "";
         blockedSites.forEach((site, index) => {
             const meta = blockedSiteMeta[site] || {};
@@ -251,10 +128,9 @@ function renderState() {
             blockedSitesList.appendChild(li);
         });
         document.querySelectorAll("button[data-remove-blocked]").forEach((btn) => {
-            btn.onclick = () => removeBlockedSite(Number(btn.dataset.removeBlocked));
+            btn.onclick = () => removeBlockedSite(Number(btn.dataset.removeBlocked), renderState);
         });
 
-        // Render productive sites as cards
         productiveSitesList.innerHTML = "";
         productiveSites.forEach((site, index) => {
             const host = normalizeHost(site);
@@ -274,7 +150,6 @@ function renderState() {
             btn.onclick = () => removeProductiveSite(Number(btn.dataset.removeProductive));
         });
 
-        // Render default select
         defaultProductiveSelect.innerHTML = "";
         productiveSites.forEach((site) => {
             const option = document.createElement("option");
@@ -284,7 +159,6 @@ function renderState() {
             defaultProductiveSelect.appendChild(option);
         });
 
-        // Render site mappings with icons
         mappingList.innerHTML = "";
         blockedSites.forEach((blockedSite) => {
             const meta = blockedSiteMeta[blockedSite] || {};
@@ -293,7 +167,7 @@ function renderState() {
             const options = ["<option value=\"\">Use fallback</option>"];
             productiveSites.forEach((site) => {
                 const isSelected = site === selected ? "selected" : "";
-                options.push(`<option value=\"${site}\" ${isSelected}>${site}</option>`);
+                options.push(`<option value="${site}" ${isSelected}>${site}</option>`);
             });
             const li = document.createElement("li");
             li.className = "mapping-item";
@@ -307,19 +181,15 @@ function renderState() {
             mappingList.appendChild(li);
         });
         document.querySelectorAll("select[data-map-blocked]").forEach((select) => {
-            select.onchange = () => {
-                saveMapping(select.dataset.mapBlocked, select.value);
-            };
+            select.onchange = () => saveMapping(select.dataset.mapBlocked, select.value);
         });
 
-        // Render toggles
         focusToggle.checked = data.focusMode ?? true;
         randomToggle.checked = data.randomMode ?? true;
         punishToggle.checked = data.punishmentMode ?? false;
         timerToggle.checked = data.timerMode ?? false;
         punishThresholdInput.value = data.punishThreshold || 5;
 
-        // Render session state
         const sessionConfig = {
             workMinutes: Number(data.sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
             breakMinutes: Number(data.sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
@@ -337,6 +207,55 @@ function renderState() {
             sessionStatus.textContent = `${sessionState.phase.toUpperCase()} - ${timeLeft}`;
         }
     });
+}
+
+async function refreshToolkitStatus() {
+    try {
+        const status = await sendMessage({ type: "GET_SYNC_STATUS" });
+        if (status.githubConnected) {
+            githubStatus.textContent = `Connected as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
+            githubStatus.dataset.kind = "success";
+        } else {
+            githubStatus.textContent = "Not connected — set GITHUB_OAUTH_CLIENT_ID in util/constants.js first";
+            githubStatus.dataset.kind = "info";
+        }
+        githubAutoPushToggle.checked = status.githubAutoPush !== false;
+        cfHandleInput.value = status.cfHandle || "";
+
+        if (status.sheetsConnected || status.spreadsheetId) {
+            sheetsStatus.textContent = status.spreadsheetUrl
+                ? `Sheet linked: ${status.spreadsheetUrl}`
+                : (status.sheetsConnected ? "Google connected — paste a Sheet URL" : "Not connected");
+            sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
+        } else {
+            sheetsStatus.textContent = "Not connected — set GOOGLE_OAUTH_CLIENT_ID in util/constants.js first";
+        }
+        if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
+        jobGoalInput.value = status.jobAppGoal || 5;
+
+        if (status.githubConnected) {
+            await loadRepos(status.githubRepo);
+        }
+    } catch (err) {
+        githubStatus.textContent = err.message;
+        githubStatus.dataset.kind = "error";
+    }
+}
+
+async function loadRepos(selectedFull) {
+    try {
+        const repos = await sendMessage({ type: "GITHUB_LIST_REPOS" });
+        githubRepoSelect.innerHTML = "<option value=\"\">Select a repository</option>";
+        (repos || []).forEach((repo) => {
+            const option = document.createElement("option");
+            option.value = `${repo.owner.login}/${repo.name}`;
+            option.textContent = repo.full_name || option.value;
+            if (selectedFull && option.value === selectedFull) option.selected = true;
+            githubRepoSelect.appendChild(option);
+        });
+    } catch (_err) {
+        // ignore until connected
+    }
 }
 
 function addBlockedSite() {
@@ -369,20 +288,6 @@ function addProductiveSite() {
             productiveSiteInput.value = "";
             renderState();
         });
-    });
-}
-
-function removeBlockedSite(index) {
-    chrome.storage.sync.get(["blockedSites", "siteMappings", "blockedSiteMeta"], (data) => {
-        const blockedSites = data.blockedSites || [];
-        const siteMappings = data.siteMappings || {};
-        const blockedSiteMeta = data.blockedSiteMeta || {};
-        const [removed] = blockedSites.splice(index, 1);
-        if (removed) {
-            delete siteMappings[removed];
-            delete blockedSiteMeta[removed];
-        }
-        chrome.storage.sync.set({ blockedSites, siteMappings, blockedSiteMeta }, renderState);
     });
 }
 
@@ -465,6 +370,23 @@ function stopSession() {
     }, renderState);
 }
 
+async function connectGitHub() {
+    try {
+        githubDeviceHint.hidden = false;
+        githubDeviceHint.textContent = "Starting device login...";
+        const codes = await sendMessage({ type: "GITHUB_START_DEVICE_CODES" });
+        githubDeviceHint.innerHTML = `Enter code <b>${codes.userCode}</b> at <a href="${codes.verificationUri}" target="_blank" rel="noopener">${codes.verificationUri}</a>, then wait...`;
+        const result = await sendMessage({ type: "GITHUB_POLL_DEVICE" });
+        githubDeviceHint.textContent = `Connected as ${result.user?.login || "user"}`;
+        githubDeviceHint.dataset.kind = "success";
+        await refreshToolkitStatus();
+    } catch (err) {
+        githubDeviceHint.hidden = false;
+        githubDeviceHint.dataset.kind = "error";
+        githubDeviceHint.textContent = err.message;
+    }
+}
+
 addBlockedBtn.onclick = addBlockedSite;
 addProductiveBtn.onclick = addProductiveSite;
 saveDefaultBtn.onclick = saveDefaultProductive;
@@ -478,6 +400,70 @@ randomToggle.onchange = () => chrome.storage.sync.set({ randomMode: randomToggle
 punishToggle.onchange = () => chrome.storage.sync.set({ punishmentMode: punishToggle.checked });
 timerToggle.onchange = () => chrome.storage.sync.set({ timerMode: timerToggle.checked });
 
+githubConnectBtn.onclick = connectGitHub;
+githubDisconnectBtn.onclick = async () => {
+    await sendMessage({ type: "GITHUB_DISCONNECT" });
+    await refreshToolkitStatus();
+};
+githubRefreshReposBtn.onclick = () => refreshToolkitStatus();
+githubRepoSelect.onchange = async () => {
+    const value = githubRepoSelect.value;
+    if (!value) return;
+    const [owner, repo] = value.split("/");
+    await sendMessage({ type: "GITHUB_SET_REPO", owner, repo });
+    await refreshToolkitStatus();
+};
+githubCreateRepoBtn.onclick = async () => {
+    const name = (githubNewRepoInput.value || "").trim();
+    if (!name) return;
+    try {
+        await sendMessage({ type: "GITHUB_CREATE_REPO", name, private: false });
+        githubNewRepoInput.value = "";
+        await refreshToolkitStatus();
+    } catch (err) {
+        githubStatus.textContent = err.message;
+        githubStatus.dataset.kind = "error";
+    }
+};
+githubAutoPushToggle.onchange = async () => {
+    await sendMessage({ type: "GITHUB_SET_AUTO", autoPush: githubAutoPushToggle.checked });
+};
+cfHandleSaveBtn.onclick = async () => {
+    await sendMessage({ type: "SET_CF_HANDLE", handle: (cfHandleInput.value || "").trim() });
+    githubStatus.textContent = "Codeforces handle saved — polling for new OK verdicts.";
+    githubStatus.dataset.kind = "success";
+};
+
+googleConnectBtn.onclick = async () => {
+    try {
+        await sendMessage({ type: "GOOGLE_CONNECT" });
+        await refreshToolkitStatus();
+    } catch (err) {
+        sheetsStatus.textContent = err.message;
+        sheetsStatus.dataset.kind = "error";
+    }
+};
+googleDisconnectBtn.onclick = async () => {
+    await sendMessage({ type: "GOOGLE_DISCONNECT" });
+    await refreshToolkitStatus();
+};
+sheetLinkBtn.onclick = async () => {
+    try {
+        const result = await sendMessage({ type: "SHEETS_LINK", urlOrId: sheetUrlInput.value });
+        sheetsStatus.textContent = `Linked: ${result.title || result.spreadsheetId}`;
+        sheetsStatus.dataset.kind = "success";
+        await refreshToolkitStatus();
+    } catch (err) {
+        sheetsStatus.textContent = err.message;
+        sheetsStatus.dataset.kind = "error";
+    }
+};
+jobGoalSaveBtn.onclick = async () => {
+    await sendMessage({ type: "SET_JOB_GOAL", goal: Number(jobGoalInput.value) || 5 });
+    sheetsStatus.textContent = "Daily application goal saved.";
+    sheetsStatus.dataset.kind = "success";
+};
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync" && areaName !== "local") return;
     if (Object.keys(changes).length > 0) {
@@ -489,6 +475,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 migrateLegacyRules(() => {
     renderState();
     loadStats();
+    refreshToolkitStatus();
 });
 
 function updateSessionTimer() {
@@ -507,5 +494,4 @@ function updateSessionTimer() {
     });
 }
 
-// Update only the session timer every second — avoid re-rendering the whole UI
 setInterval(updateSessionTimer, 1000);

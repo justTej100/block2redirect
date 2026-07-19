@@ -1,6 +1,6 @@
 /**
  * SHARED CONSTANTS
- * 
+ *
  * Global constants used across popup, settings, and background scripts.
  */
 
@@ -21,4 +21,47 @@ const DEFAULT_PRODUCTIVE_SITES = [
 const DEFAULT_SESSION_CONFIG = {
     workMinutes: 25,
     breakMinutes: 5
+};
+
+/** Replace with your GitHub OAuth App client ID (Device Flow, no secret). */
+const GITHUB_OAUTH_CLIENT_ID = "YOUR_GITHUB_OAUTH_CLIENT_ID";
+
+/** Replace with your Google OAuth client ID (Chrome extension type). */
+const GOOGLE_OAUTH_CLIENT_ID = "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";
+
+const GOOGLE_SHEETS_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets"
+].join(" ");
+
+const JOB_SHEET_HEADERS = [
+    "Date Applied",
+    "Company",
+    "Role",
+    "Location",
+    "Source",
+    "Link",
+    "Status",
+    "Follow-up Date",
+    "Notes"
+];
+
+const LANG_EXTENSIONS = {
+    python: "py",
+    python3: "py",
+    javascript: "js",
+    typescript: "ts",
+    java: "java",
+    cpp: "cpp",
+    c: "c",
+    csharp: "cs",
+    go: "go",
+    rust: "rs",
+    kotlin: "kt",
+    swift: "swift",
+    ruby: "rb",
+    php: "php",
+    scala: "scala",
+    mysql: "sql",
+    mssql: "sql",
+    oraclesql: "sql"
 };

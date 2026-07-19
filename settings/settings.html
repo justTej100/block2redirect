@@ -8,141 +8,143 @@
 </head>
 
 <body class="settings-page">
+	<h1>Settings</h1>
 
-<!DOCTYPE html>
-<html>
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Block2Redirect Settings</title>
-	<link rel="stylesheet" href="settings.css">
-</head>
-
-<body class="settings-page">
-	<!-- 
-		SETTINGS PAGE MAIN INTERFACE
-		
-		Full-screen settings management with two-column layout.
-		
-		LEFT COLUMN (50%):
-		- Blocked Sites: Card grid showing all blocked domains with favicons
-		- Productive Sites: Card grid showing redirect targets with favicons
-		- Site Mappings: List-view with blocked-site icon + select dropdown for per-site redirects
-		
-		RIGHT COLUMN (50%):
-		- Blocked Attempts: Stats list showing most-blocked sites with attempt count
-		- Mode Toggles: Native checkbox toggles (Focus, Random, Punishment, Timer) with custom slider styling
-		- Timer Sessions: Work/break minute inputs, start/stop buttons, active session display
-		- Additional Settings: Punishment threshold input, default productive site selector
-		
-		All sites render with favicon metadata from:
-		- blockedSiteMeta (for blocked sites)
-		- Google Favicons API fallback
-		
-		Storage Integration:
-		- Live sync with chrome.storage.sync on every change
-		- Real-time stats from chrome.storage.local
-		- Session state resolution (auto-advance phases)
-	-->
-
-<h1>Settings</h1>
-
-<div class="settings-container">
-	<!-- LEFT 50%: Site Management -->
-	<div class="settings-left">
-		<!-- Top-Left: Blocked Sites -->
-		<div class="panel blocked-sites-panel">
-			<h3>Blocked Sites</h3>
-			<div class="row">
-				<input id="blockedSiteInput" placeholder="reddit.com" aria-label="Blocked site domain">
-				<button id="addBlockedBtn">Add</button>
+	<div class="settings-container">
+		<div class="settings-left">
+			<div class="panel blocked-sites-panel">
+				<h3>Blocked Sites</h3>
+				<div class="row">
+					<input id="blockedSiteInput" placeholder="reddit.com" aria-label="Blocked site domain">
+					<button id="addBlockedBtn">Add</button>
+				</div>
+				<ul id="blockedSitesList" class="sites-grid"></ul>
 			</div>
-			<ul id="blockedSitesList" class="sites-grid"></ul>
+
+			<div class="panel productive-sites-panel">
+				<h3>Productive Sites</h3>
+				<div class="row">
+					<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
+					<button id="addProductiveBtn">Add</button>
+				</div>
+				<ul id="productiveSitesList" class="sites-grid"></ul>
+			</div>
+
+			<div class="panel site-mappings-panel">
+				<h3>Site Mappings</h3>
+				<p class="status-text">Map blocked sites to specific productive sites</p>
+				<ul id="mappingList" class="mappings-list"></ul>
+			</div>
+
+			<div class="panel github-panel">
+				<h3>GitHub Solve Sync</h3>
+				<p id="githubStatus" class="status-text">Not connected</p>
+				<div class="row">
+					<button id="githubConnectBtn" type="button">Connect GitHub</button>
+					<button id="githubDisconnectBtn" type="button" class="danger">Disconnect</button>
+				</div>
+				<p id="githubDeviceHint" class="status-text" hidden></p>
+				<div class="row">
+					<select id="githubRepoSelect" aria-label="GitHub repository"></select>
+					<button id="githubRefreshReposBtn" type="button" class="secondary">Refresh</button>
+				</div>
+				<div class="row">
+					<input id="githubNewRepoInput" placeholder="new-repo-name" aria-label="New repo name">
+					<button id="githubCreateRepoBtn" type="button">Create repo</button>
+				</div>
+				<label class="toggle-label">
+					<input type="checkbox" id="githubAutoPushToggle" checked>
+					<span class="toggle-slider"></span>
+					<span>Auto-push solves</span>
+				</label>
+				<div class="row">
+					<input id="cfHandleInput" placeholder="Codeforces handle" aria-label="Codeforces handle">
+					<button id="cfHandleSaveBtn" type="button">Save CF handle</button>
+				</div>
+			</div>
 		</div>
 
-		<!-- Top-Right: Productive Sites -->
-		<div class="panel productive-sites-panel">
-			<h3>Productive Sites</h3>
-			<div class="row">
-				<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
-				<button id="addProductiveBtn">Add</button>
+		<div class="settings-right">
+			<div class="panel stats-panel">
+				<h3>Blocked Attempts</h3>
+				<ul id="statsList" class="stats-list"></ul>
 			</div>
-			<ul id="productiveSitesList" class="sites-grid"></ul>
-		</div>
 
-		<!-- Bottom: Site Mappings -->
-		<div class="panel site-mappings-panel">
-			<h3>Site Mappings</h3>
-			<p class="status-text">Map blocked sites to specific productive sites</p>
-			<ul id="mappingList" class="mappings-list"></ul>
+			<div class="panel modes-panel">
+				<h3>Modes</h3>
+				<label class="toggle-label">
+					<input type="checkbox" id="focusToggle">
+					<span class="toggle-slider"></span>
+					<span>Focus Mode</span>
+				</label>
+				<label class="toggle-label">
+					<input type="checkbox" id="randomToggle">
+					<span class="toggle-slider"></span>
+					<span>Random Productive</span>
+				</label>
+				<label class="toggle-label">
+					<input type="checkbox" id="punishToggle">
+					<span class="toggle-slider"></span>
+					<span>Punishment Mode</span>
+				</label>
+				<label class="toggle-label">
+					<input type="checkbox" id="timerToggle">
+					<span class="toggle-slider"></span>
+					<span>Timer Mode</span>
+				</label>
+			</div>
+
+			<div class="panel timer-panel">
+				<h3>Timer Sessions</h3>
+				<div class="row">
+					<input type="number" id="workMinutesInput" min="1" placeholder="Work min" aria-label="Work minutes">
+					<input type="number" id="breakMinutesInput" min="1" placeholder="Break min" aria-label="Break minutes">
+					<button id="saveSessionConfigBtn">Save</button>
+				</div>
+				<div class="row">
+					<button id="startSessionBtn">Start</button>
+					<button id="stopSessionBtn" class="danger">Stop</button>
+				</div>
+				<p id="sessionStatus" class="status-text">Session inactive</p>
+			</div>
+
+			<div class="panel other-panel">
+				<h3>Additional Settings</h3>
+				<div class="row">
+					<input type="number" id="punishThresholdInput" min="1" placeholder="Punishment threshold" aria-label="Punishment threshold">
+					<button id="saveThresholdBtn">Save</button>
+				</div>
+				<div class="row">
+					<label>Default Redirect:</label>
+					<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
+					<button id="saveDefaultBtn">Set</button>
+				</div>
+			</div>
+
+			<div class="panel sheets-panel">
+				<h3>Job Tracker (Google Sheets)</h3>
+				<p id="sheetsStatus" class="status-text">Not connected</p>
+				<div class="row">
+					<button id="googleConnectBtn" type="button">Connect Google</button>
+					<button id="googleDisconnectBtn" type="button" class="danger">Disconnect</button>
+				</div>
+				<div class="row">
+					<input id="sheetUrlInput" placeholder="Google Sheet URL" aria-label="Google Sheet URL">
+					<button id="sheetLinkBtn" type="button">Link sheet</button>
+				</div>
+				<div class="row">
+					<input type="number" id="jobGoalInput" min="1" placeholder="Daily app goal" aria-label="Daily application goal">
+					<button id="jobGoalSaveBtn" type="button">Save goal</button>
+				</div>
+				<p class="status-text">Columns: Date | Company | Role | Location | Source | Link | Status | Follow-up | Notes</p>
+			</div>
 		</div>
 	</div>
 
-	<!-- RIGHT 50%: Features & Stats -->
-	<div class="settings-right">
-		<!-- Stats -->
-		<div class="panel stats-panel">
-			<h3>Blocked Attempts</h3>
-			<ul id="statsList" class="stats-list"></ul>
-		</div>
-
-		<!-- Mode Toggles -->
-		<div class="panel modes-panel">
-			<h3>Modes</h3>
-			<label class="toggle-label">
-				<input type="checkbox" id="focusToggle">
-				<span class="toggle-slider"></span>
-				<span>Focus Mode</span>
-			</label>
-			<label class="toggle-label">
-				<input type="checkbox" id="randomToggle">
-				<span class="toggle-slider"></span>
-				<span>Random Productive</span>
-			</label>
-			<label class="toggle-label">
-				<input type="checkbox" id="punishToggle">
-				<span class="toggle-slider"></span>
-				<span>Punishment Mode</span>
-			</label>
-			<label class="toggle-label">
-				<input type="checkbox" id="timerToggle">
-				<span class="toggle-slider"></span>
-				<span>Timer Mode</span>
-			</label>
-		</div>
-
-		<!-- Timer Settings -->
-		<div class="panel timer-panel">
-			<h3>Timer Sessions</h3>
-			<div class="row">
-				<input type="number" id="workMinutesInput" min="1" placeholder="Work min" aria-label="Work minutes">
-				<input type="number" id="breakMinutesInput" min="1" placeholder="Break min" aria-label="Break minutes">
-				<button id="saveSessionConfigBtn">Save</button>
-			</div>
-			<div class="row">
-				<button id="startSessionBtn">Start</button>
-				<button id="stopSessionBtn" class="danger">Stop</button>
-			</div>
-			<p id="sessionStatus" class="status-text">Session inactive</p>
-		</div>
-
-		<!-- Other Settings -->
-		<div class="panel other-panel">
-			<h3>Additional Settings</h3>
-			<div class="row">
-				<input type="number" id="punishThresholdInput" min="1" placeholder="Punishment threshold" aria-label="Punishment threshold">
-				<button id="saveThresholdBtn">Save</button>
-			</div>
-			<div class="row">
-				<label>Default Redirect:</label>
-				<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
-				<button id="saveDefaultBtn">Set</button>
-			</div>
-		</div>
-	</div>
-</div>
-
-<script src="settings.js"></script>
-
+	<script src="../util/constants.js"></script>
+	<script src="../util/helpers.js"></script>
+	<script src="../util/storage.js"></script>
+	<script src="../util/validation.js"></script>
+	<script src="settings.js"></script>
 </body>
 </html>

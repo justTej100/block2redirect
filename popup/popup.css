@@ -43,6 +43,39 @@ h1{
     margin:0 0 12px;
 }
 
+.dashboard-strip{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:6px;
+    margin:0 0 12px;
+}
+
+.dash-item{
+    background:#0b1224;
+    border:1px solid #1e293b;
+    border-radius:8px;
+    padding:8px 4px;
+    text-align:center;
+}
+
+.dash-value{
+    display:block;
+    font-size:18px;
+    font-weight:700;
+    color:#22D3EE;
+}
+
+.dash-label{
+    display:block;
+    font-size:11px;
+    color:#94a3b8;
+    margin-top:2px;
+}
+
+.dash-goal .dash-value{
+    font-size:15px;
+}
+
 h3{
     margin:10px 0 10px;
 }

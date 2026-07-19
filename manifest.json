@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Block2Redirect",
-  "version": "1.0",
-  "description": "Redirect distracting sites to productive ones.",
+  "version": "1.1.0",
+  "description": "Redirect distracting sites to productive ones — plus GitHub solve sync and job application tracking.",
   "permissions": [
     "storage",
     "tabs",
-    "declarativeNetRequest"
+    "identity",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -15,8 +17,54 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup/popup.html"
-  }
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content-scripts/leetcode-inject.js"],
+      "matches": ["https://leetcode.com/*", "https://*.leetcode.com/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/*", "https://*.leetcode.com/*"],
+      "js": ["content-scripts/leetcode.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://neetcode.io/*", "https://*.neetcode.io/*"],
+      "js": ["content-scripts/neetcode.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://codeforces.com/*", "https://*.codeforces.com/*"],
+      "js": ["content-scripts/codeforces.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*",
+        "https://*.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://*.indeed.com/*",
+        "https://indeed.com/*",
+        "https://jobs.lever.co/*",
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*"
+      ],
+      "js": ["content-scripts/job-boards.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }
-
-

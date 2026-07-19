@@ -1,6 +1,6 @@
 /**
  * SHARED HELPER FUNCTIONS
- * 
+ *
  * Utility functions used across popup, settings, and background scripts.
  */
 
@@ -48,6 +48,34 @@ function isLikelyHost(host) {
     return /^localhost(?::\d+)?$/i.test(host) || /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(host);
 }
 
+/** Hostname match including subdomains */
+function hostMatches(hostname, target) {
+    const normalizedHost = normalizeHost(hostname);
+    const normalizedTarget = normalizeHost(target);
+    if (!normalizedHost || !normalizedTarget) return false;
+    return (
+        normalizedHost === normalizedTarget ||
+        normalizedHost.endsWith(`.${normalizedTarget}`)
+    );
+}
+
+/** Whether current time falls in a start:end schedule window */
+function isWithinSchedule(start, end) {
+    const now = new Date();
+    let minutes = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = (start || "00:00").split(":").map(Number);
+    const [eh, em] = (end || "23:59").split(":").map(Number);
+    const startMin = sh * 60 + sm;
+    let endMin = eh * 60 + em;
+    if (endMin < startMin) {
+        endMin += 24 * 60;
+        if (minutes < startMin) {
+            minutes += 24 * 60;
+        }
+    }
+    return minutes >= startMin && minutes <= endMin;
+}
+
 /** Resolve session state, auto-advancing phases if needed */
 function resolveSessionState(sessionState, sessionConfig) {
     if (!sessionState || !sessionState.isActive) {
@@ -75,6 +103,9 @@ function resolveSessionState(sessionState, sessionConfig) {
         }
         guard += 1;
     }
+    if (!resolved.endsAt) {
+        resolved.isActive = false;
+    }
     return resolved;
 }
 
@@ -94,16 +125,56 @@ function getCurrentTab(callback) {
     });
 }
 
+/** Pick a valid default productive site from a list */
+function pickDefaultProductiveSite(defaultProductiveSite, productiveSites) {
+    const normalizedSites = (productiveSites || []).map(ensureUrl).filter(Boolean);
+    const storedDefault = ensureUrl(defaultProductiveSite);
+    if (storedDefault && normalizedSites.includes(storedDefault)) {
+        return storedDefault;
+    }
+    return normalizedSites[0] || DEFAULT_PRODUCTIVE_SITES[0];
+}
+
 /** Get default productive site from storage */
 function getDefaultProductiveSite() {
     return new Promise((resolve) => {
         chrome.storage.sync.get(["defaultProductiveSite", "productiveSites"], (data) => {
-            const productiveSites = (data.productiveSites || []).map(ensureUrl).filter(Boolean);
-            const storedDefault = ensureUrl(data.defaultProductiveSite);
-            const defaultSite = productiveSites.includes(storedDefault)
-                ? storedDefault
-                : productiveSites[0] || DEFAULT_PRODUCTIVE_SITES[0];
-            resolve(ensureUrl(defaultSite));
+            resolve(pickDefaultProductiveSite(data.defaultProductiveSite, data.productiveSites));
         });
     });
+}
+
+/** Map language name to file extension */
+function languageToExtension(language) {
+    if (!language) return "txt";
+    const key = String(language).toLowerCase().replace(/\s+/g, "");
+    return LANG_EXTENSIONS[key] || key.slice(0, 8) || "txt";
+}
+
+/** Slugify a problem title for paths */
+function slugify(value) {
+    return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 80) || "solution";
+}
+
+/** Today's date key YYYY-MM-DD in local time */
+function todayKey() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
+
+/** Encode string to base64 (UTF-8 safe) */
+function utf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    bytes.forEach((b) => {
+        binary += String.fromCharCode(b);
+    });
+    return btoa(binary);
 }
