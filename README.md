@@ -27,24 +27,24 @@ Example:
 
 ## OAuth setup (toolkit features)
 
-Set client IDs in [`util/constants.js`](util/constants.js):
+Paste client IDs in the extension **Settings** UI. They are stored in `chrome.storage.local` (not in the repo).
+
+OAuth **client IDs** are public identifiers. Never put a GitHub/Google **client secret** in the extension — this project uses Device Flow and `chrome.identity` so secrets are not required.
 
 ### GitHub (Device Flow)
 
 1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
 2. Homepage URL: `https://github.com` (or your repo)
 3. Authorization callback URL: `http://localhost` (unused for device flow, but required)
-4. Copy the **Client ID** into `GITHUB_OAUTH_CLIENT_ID`
-5. Enable Device Flow on the OAuth App if prompted
-6. In the extension Settings → **Connect GitHub** → enter the device code → pick or create a repo
+4. Enable Device Flow on the OAuth App if prompted
+5. In Settings → paste the **Client ID** → Save → **Connect GitHub** → enter the device code → pick or create a repo
 
 ### Google Sheets
 
 1. Google Cloud Console → create a project → enable **Google Sheets API**
 2. Create an OAuth client ID of type **Chrome Extension**
 3. Use your extension ID from `chrome://extensions` as the application ID
-4. Copy the client ID into `GOOGLE_OAUTH_CLIENT_ID`
-5. Create a Google Sheet, then in Settings → **Connect Google** → paste the sheet URL → **Link sheet**
+4. In Settings → paste the client ID → Save → **Connect Google** → paste a Sheet URL → **Link sheet**
 
 Redirect URI used by the extension: `https://<extension-id>.chromiumapp.org/` (from `chrome.identity.getRedirectURL()`).
 

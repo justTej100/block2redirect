@@ -330,9 +330,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     githubUser: github.user,
                     githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
                     githubAutoPush: github.autoPush,
+                    githubClientId: github.clientId || "",
                     sheetsConnected: Boolean(sheets.accessToken),
                     spreadsheetId: sheets.spreadsheetId,
                     spreadsheetUrl: sheets.spreadsheetUrl,
+                    googleClientId: sheets.clientId || "",
                     jobAppGoal: sheets.jobAppGoal,
                     daily,
                     lastSolve,
@@ -445,6 +447,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     jobAppGoal: Math.max(1, Number(message.goal) || 5)
                 }, resolve));
                 return { jobAppGoal: Math.max(1, Number(message.goal) || 5) };
+            })());
+
+        case "SET_GITHUB_CLIENT_ID":
+            return reply((async () => {
+                await new Promise((resolve) => setGitHubConfig({
+                    clientId: (message.clientId || "").trim()
+                }, resolve));
+                return { clientId: (message.clientId || "").trim() };
+            })());
+
+        case "SET_GOOGLE_CLIENT_ID":
+            return reply((async () => {
+                await new Promise((resolve) => setSheetsConfig({
+                    clientId: (message.clientId || "").trim()
+                }, resolve));
+                return { clientId: (message.clientId || "").trim() };
             })());
 
         case "POLL_CODEFORCES":

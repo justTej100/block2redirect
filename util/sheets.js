@@ -17,13 +17,19 @@ function extractSpreadsheetId(urlOrId) {
     return "";
 }
 
-async function connectGoogle() {
-    if (!GOOGLE_OAUTH_CLIENT_ID || GOOGLE_OAUTH_CLIENT_ID.startsWith("YOUR_")) {
-        throw new Error("Set GOOGLE_OAUTH_CLIENT_ID in util/constants.js");
+async function getGoogleClientId() {
+    const config = await new Promise((resolve) => getSheetsConfig(resolve));
+    if (!config.clientId) {
+        throw new Error("Add your Google OAuth client ID in Settings → Job Tracker");
     }
+    return config.clientId;
+}
+
+async function connectGoogle() {
+    const clientId = await getGoogleClientId();
     const redirectUri = chrome.identity.getRedirectURL();
     const params = new URLSearchParams({
-        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        client_id: clientId,
         response_type: "token",
         redirect_uri: redirectUri,
         scope: GOOGLE_SHEETS_SCOPES,

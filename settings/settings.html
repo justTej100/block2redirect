@@ -40,6 +40,10 @@
 				<h3>GitHub Solve Sync</h3>
 				<p id="githubStatus" class="status-text">Not connected</p>
 				<div class="row">
+					<input id="githubClientIdInput" type="text" placeholder="GitHub OAuth App client ID" aria-label="GitHub OAuth client ID" autocomplete="off">
+					<button id="githubClientIdSaveBtn" type="button">Save</button>
+				</div>
+				<div class="row">
 					<button id="githubConnectBtn" type="button">Connect GitHub</button>
 					<button id="githubDisconnectBtn" type="button" class="danger">Disconnect</button>
 				</div>
@@ -124,6 +128,10 @@
 			<div class="panel sheets-panel">
 				<h3>Job Tracker (Google Sheets)</h3>
 				<p id="sheetsStatus" class="status-text">Not connected</p>
+				<div class="row">
+					<input id="googleClientIdInput" type="text" placeholder="Google OAuth client ID" aria-label="Google OAuth client ID" autocomplete="off">
+					<button id="googleClientIdSaveBtn" type="button">Save</button>
+				</div>
 				<div class="row">
 					<button id="googleConnectBtn" type="button">Connect Google</button>
 					<button id="googleDisconnectBtn" type="button" class="danger">Disconnect</button>

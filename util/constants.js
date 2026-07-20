@@ -23,12 +23,6 @@ const DEFAULT_SESSION_CONFIG = {
     breakMinutes: 5
 };
 
-/** Replace with your GitHub OAuth App client ID (Device Flow, no secret). */
-const GITHUB_OAUTH_CLIENT_ID = "YOUR_GITHUB_OAUTH_CLIENT_ID";
-
-/** Replace with your Google OAuth client ID (Chrome extension type). */
-const GOOGLE_OAUTH_CLIENT_ID = "YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";
-
 const GOOGLE_SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets"
 ].join(" ");

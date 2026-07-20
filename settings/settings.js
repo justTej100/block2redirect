@@ -34,6 +34,8 @@ const statsList = document.getElementById("statsList");
 
 const githubStatus = document.getElementById("githubStatus");
 const githubDeviceHint = document.getElementById("githubDeviceHint");
+const githubClientIdInput = document.getElementById("githubClientIdInput");
+const githubClientIdSaveBtn = document.getElementById("githubClientIdSaveBtn");
 const githubConnectBtn = document.getElementById("githubConnectBtn");
 const githubDisconnectBtn = document.getElementById("githubDisconnectBtn");
 const githubRepoSelect = document.getElementById("githubRepoSelect");
@@ -45,6 +47,8 @@ const cfHandleInput = document.getElementById("cfHandleInput");
 const cfHandleSaveBtn = document.getElementById("cfHandleSaveBtn");
 
 const sheetsStatus = document.getElementById("sheetsStatus");
+const googleClientIdInput = document.getElementById("googleClientIdInput");
+const googleClientIdSaveBtn = document.getElementById("googleClientIdSaveBtn");
 const googleConnectBtn = document.getElementById("googleConnectBtn");
 const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
 const sheetUrlInput = document.getElementById("sheetUrlInput");
@@ -212,11 +216,17 @@ function renderState() {
 async function refreshToolkitStatus() {
     try {
         const status = await sendMessage({ type: "GET_SYNC_STATUS" });
+        githubClientIdInput.value = status.githubClientId || "";
+        googleClientIdInput.value = status.googleClientId || "";
+
         if (status.githubConnected) {
             githubStatus.textContent = `Connected as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
             githubStatus.dataset.kind = "success";
+        } else if (!status.githubClientId) {
+            githubStatus.textContent = "Paste your GitHub OAuth App client ID, then Connect";
+            githubStatus.dataset.kind = "info";
         } else {
-            githubStatus.textContent = "Not connected — set GITHUB_OAUTH_CLIENT_ID in util/constants.js first";
+            githubStatus.textContent = "Client ID saved — click Connect GitHub";
             githubStatus.dataset.kind = "info";
         }
         githubAutoPushToggle.checked = status.githubAutoPush !== false;
@@ -227,8 +237,12 @@ async function refreshToolkitStatus() {
                 ? `Sheet linked: ${status.spreadsheetUrl}`
                 : (status.sheetsConnected ? "Google connected — paste a Sheet URL" : "Not connected");
             sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
+        } else if (!status.googleClientId) {
+            sheetsStatus.textContent = "Paste your Google OAuth client ID, then Connect";
+            sheetsStatus.dataset.kind = "info";
         } else {
-            sheetsStatus.textContent = "Not connected — set GOOGLE_OAUTH_CLIENT_ID in util/constants.js first";
+            sheetsStatus.textContent = "Client ID saved — click Connect Google";
+            sheetsStatus.dataset.kind = "info";
         }
         if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
         jobGoalInput.value = status.jobAppGoal || 5;
@@ -399,6 +413,17 @@ focusToggle.onchange = () => chrome.storage.sync.set({ focusMode: focusToggle.ch
 randomToggle.onchange = () => chrome.storage.sync.set({ randomMode: randomToggle.checked });
 punishToggle.onchange = () => chrome.storage.sync.set({ punishmentMode: punishToggle.checked });
 timerToggle.onchange = () => chrome.storage.sync.set({ timerMode: timerToggle.checked });
+
+githubClientIdSaveBtn.onclick = async () => {
+    await sendMessage({ type: "SET_GITHUB_CLIENT_ID", clientId: githubClientIdInput.value });
+    githubStatus.textContent = "GitHub client ID saved.";
+    githubStatus.dataset.kind = "success";
+};
+googleClientIdSaveBtn.onclick = async () => {
+    await sendMessage({ type: "SET_GOOGLE_CLIENT_ID", clientId: googleClientIdInput.value });
+    sheetsStatus.textContent = "Google client ID saved.";
+    sheetsStatus.dataset.kind = "success";
+};
 
 githubConnectBtn.onclick = connectGitHub;
 githubDisconnectBtn.onclick = async () => {

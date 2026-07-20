@@ -11,12 +11,18 @@ const GITHUB_API = "https://api.github.com";
 /**
  * Start GitHub Device Flow. Returns { user_code, verification_uri, device_code, interval, expires_in }.
  */
-async function startGitHubDeviceFlow() {
-    if (!GITHUB_OAUTH_CLIENT_ID || GITHUB_OAUTH_CLIENT_ID.startsWith("YOUR_")) {
-        throw new Error("Set GITHUB_OAUTH_CLIENT_ID in util/constants.js");
+async function getGitHubClientId() {
+    const config = await new Promise((resolve) => getGitHubConfig(resolve));
+    if (!config.clientId) {
+        throw new Error("Add your GitHub OAuth App client ID in Settings → GitHub Solve Sync");
     }
+    return config.clientId;
+}
+
+async function startGitHubDeviceFlow() {
+    const clientId = await getGitHubClientId();
     const body = new URLSearchParams({
-        client_id: GITHUB_OAUTH_CLIENT_ID,
+        client_id: clientId,
         scope: "repo"
     });
     const res = await fetch(GITHUB_DEVICE_CODE_URL, {
@@ -37,13 +43,14 @@ async function startGitHubDeviceFlow() {
  * Poll until the user completes Device Flow authorization.
  */
 async function pollGitHubDeviceToken(deviceCode, intervalSec = 5, expiresIn = 900) {
+    const clientId = await getGitHubClientId();
     const started = Date.now();
     let interval = Math.max(5, Number(intervalSec) || 5) * 1000;
 
     while (Date.now() - started < expiresIn * 1000) {
         await new Promise((r) => setTimeout(r, interval));
         const body = new URLSearchParams({
-            client_id: GITHUB_OAUTH_CLIENT_ID,
+            client_id: clientId,
             device_code: deviceCode,
             grant_type: "urn:ietf:params:oauth:grant-type:device_code"
         });
