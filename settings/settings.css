@@ -63,20 +63,18 @@ h1 {
 	flex: 1 1 auto;
 	min-height: 0;
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(3, 1fr);
 	grid-template-rows: repeat(2, minmax(0, 1fr));
 	gap: 8px;
 	max-width: 100%;
 	grid-template-areas:
-		"blocked productive mappings modes"
-		"timer stats github sheets";
+		"blocked productive mappings"
+		"stats github sheets";
 }
 
 .blocked-sites-panel { grid-area: blocked; }
 .productive-sites-panel { grid-area: productive; }
 .site-mappings-panel { grid-area: mappings; }
-.modes-panel { grid-area: modes; }
-.timer-panel { grid-area: timer; }
 .stats-panel { grid-area: stats; }
 .github-panel { grid-area: github; }
 .sheets-panel { grid-area: sheets; }
@@ -312,14 +310,6 @@ button.secondary {
 	font-size: 11px;
 }
 
-.modes-grid {
-	display: grid;
-	grid-template-columns: 1fr 1fr;
-	gap: 2px 8px;
-	margin-bottom: 6px;
-	flex: 0 0 auto;
-}
-
 .toggle-label {
 	display: flex;
 	align-items: center;
@@ -453,8 +443,6 @@ label {
 	.blocked-sites-panel,
 	.productive-sites-panel,
 	.site-mappings-panel,
-	.modes-panel,
-	.timer-panel,
 	.stats-panel,
 	.github-panel,
 	.sheets-panel {

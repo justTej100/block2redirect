@@ -9,13 +9,12 @@ Example:
 ## Features
 
 - Custom website blocking and redirect targets
-- Focus / random / punishment / timer modes
+- Site mappings and a default productive fallback
 - Productivity statistics
 - **GitHub solve sync** — auto or manual commit of LeetCode / NeetCode / Codeforces solves
 - **Job application tracker** — save applications to a Google Sheet (manual or on supported job boards)
 - Daily dashboard in the popup (solves / apps / commits + app goal)
 - Follow-up badge when applications sit 7+ days without a status update
-- Solve ↔ redirect crossover: if you have 0 solves today, blocking stays strict even outside timer windows
 
 ## Installation (Developer Mode)
 

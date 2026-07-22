@@ -1,7 +1,7 @@
 /**
  * SETTINGS PAGE SCRIPT
  *
- * Site management, modes/timer, GitHub sync, and Google Sheets job tracker.
+ * Site management, GitHub sync, and Google Sheets job tracker.
  */
 
 const blockedSiteInput = document.getElementById("blockedSiteInput");
@@ -15,20 +15,6 @@ const defaultProductiveSelect = document.getElementById("defaultProductiveSelect
 const saveDefaultBtn = document.getElementById("saveDefaultBtn");
 
 const mappingList = document.getElementById("mappingList");
-
-const focusToggle = document.getElementById("focusToggle");
-const randomToggle = document.getElementById("randomToggle");
-const punishToggle = document.getElementById("punishToggle");
-const timerToggle = document.getElementById("timerToggle");
-const punishThresholdInput = document.getElementById("punishThresholdInput");
-const saveThresholdBtn = document.getElementById("saveThresholdBtn");
-
-const workMinutesInput = document.getElementById("workMinutesInput");
-const breakMinutesInput = document.getElementById("breakMinutesInput");
-const saveSessionConfigBtn = document.getElementById("saveSessionConfigBtn");
-const startSessionBtn = document.getElementById("startSessionBtn");
-const stopSessionBtn = document.getElementById("stopSessionBtn");
-const sessionStatus = document.getElementById("sessionStatus");
 
 const statsList = document.getElementById("statsList");
 
@@ -261,14 +247,7 @@ function renderState() {
         "blockedSiteMeta",
         "productiveSites",
         "siteMappings",
-        "defaultProductiveSite",
-        "focusMode",
-        "randomMode",
-        "punishmentMode",
-        "timerMode",
-        "punishThreshold",
-        "sessionConfig",
-        "sessionState"
+        "defaultProductiveSite"
     ], (data) => {
         const blockedSites = data.blockedSites || [];
         const blockedSiteMeta = data.blockedSiteMeta || {};
@@ -351,29 +330,6 @@ function renderState() {
         document.querySelectorAll("select[data-map-blocked]").forEach((select) => {
             select.onchange = () => saveMapping(select.dataset.mapBlocked, select.value);
         });
-
-        focusToggle.checked = data.focusMode ?? true;
-        randomToggle.checked = data.randomMode ?? true;
-        punishToggle.checked = data.punishmentMode ?? false;
-        timerToggle.checked = data.timerMode ?? false;
-        punishThresholdInput.value = data.punishThreshold || 5;
-
-        const sessionConfig = {
-            workMinutes: Number(data.sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
-            breakMinutes: Number(data.sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
-        };
-        const sessionState = resolveSessionState(data.sessionState, sessionConfig);
-        if (JSON.stringify(sessionState) !== JSON.stringify(data.sessionState)) {
-            chrome.storage.sync.set({ sessionState });
-        }
-        workMinutesInput.value = sessionConfig.workMinutes;
-        breakMinutesInput.value = sessionConfig.breakMinutes;
-        if (!sessionState.isActive) {
-            sessionStatus.textContent = "Session inactive";
-        } else {
-            const timeLeft = formatTimeLeft(sessionState.endsAt - Date.now());
-            sessionStatus.textContent = `${sessionState.phase.toUpperCase()} - ${timeLeft}`;
-        }
     });
 }
 
@@ -473,43 +429,6 @@ function saveDefaultProductive() {
     chrome.storage.sync.set({ defaultProductiveSite: url });
 }
 
-function saveThreshold() {
-    const threshold = Math.max(1, Number(punishThresholdInput.value) || 5);
-    chrome.storage.sync.set({ punishThreshold: threshold }, renderState);
-}
-
-function saveSessionConfig() {
-    const workMinutes = Math.max(1, Number(workMinutesInput.value) || DEFAULT_SESSION_CONFIG.workMinutes);
-    const breakMinutes = Math.max(1, Number(breakMinutesInput.value) || DEFAULT_SESSION_CONFIG.breakMinutes);
-    chrome.storage.sync.set({ sessionConfig: { workMinutes, breakMinutes } }, renderState);
-}
-
-function startSession() {
-    chrome.storage.sync.get(["sessionConfig"], (data) => {
-        const workMinutes = Math.max(1, Number(data.sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes);
-        const now = Date.now();
-        chrome.storage.sync.set({
-            sessionState: {
-                isActive: true,
-                phase: "work",
-                startedAt: now,
-                endsAt: now + workMinutes * 60 * 1000
-            }
-        }, renderState);
-    });
-}
-
-function stopSession() {
-    chrome.storage.sync.set({
-        sessionState: {
-            isActive: false,
-            phase: "work",
-            startedAt: 0,
-            endsAt: 0
-        }
-    }, renderState);
-}
-
 async function connectGitHub() {
     try {
         githubConnectBtn.disabled = true;
@@ -565,15 +484,6 @@ async function connectGitHub() {
 addBlockedBtn.onclick = addBlockedSite;
 addProductiveBtn.onclick = addProductiveSite;
 saveDefaultBtn.onclick = saveDefaultProductive;
-saveThresholdBtn.onclick = saveThreshold;
-saveSessionConfigBtn.onclick = saveSessionConfig;
-startSessionBtn.onclick = startSession;
-stopSessionBtn.onclick = stopSession;
-
-focusToggle.onchange = () => chrome.storage.sync.set({ focusMode: focusToggle.checked });
-randomToggle.onchange = () => chrome.storage.sync.set({ randomMode: randomToggle.checked });
-punishToggle.onchange = () => chrome.storage.sync.set({ punishmentMode: punishToggle.checked });
-timerToggle.onchange = () => chrome.storage.sync.set({ timerMode: timerToggle.checked });
 
 githubConnectBtn.onclick = connectGitHub;
 githubDisconnectBtn.onclick = async () => {
@@ -712,21 +622,3 @@ migrateLegacyRules(() => {
     loadStats();
     refreshToolkitStatus();
 });
-
-function updateSessionTimer() {
-    chrome.storage.sync.get(["sessionState", "sessionConfig"], (data) => {
-        const sessionConfig = {
-            workMinutes: Number(data.sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
-            breakMinutes: Number(data.sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
-        };
-        const sessionState = resolveSessionState(data.sessionState, sessionConfig);
-        if (!sessionState.isActive) {
-            sessionStatus.textContent = "Session inactive";
-        } else {
-            const timeLeft = formatTimeLeft(sessionState.endsAt - Date.now());
-            sessionStatus.textContent = `${sessionState.phase.toUpperCase()} - ${timeLeft}`;
-        }
-    });
-}
-
-setInterval(updateSessionTimer, 1000);

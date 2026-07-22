@@ -18,11 +18,6 @@ const DEFAULT_PRODUCTIVE_SITES = [
     "https://stackoverflow.com"
 ];
 
-const DEFAULT_SESSION_CONFIG = {
-    workMinutes: 25,
-    breakMinutes: 5
-};
-
 /**
  * OAuth client IDs (public — not secrets).
  *

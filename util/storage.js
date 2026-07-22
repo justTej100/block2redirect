@@ -67,9 +67,6 @@ function migrateLegacyRules(callback) {
         "productiveSites",
         "siteMappings",
         "defaultProductiveSite",
-        "sessionConfig",
-        "sessionState",
-        "timerMode",
         "blockedSiteMeta"
     ], (data) => {
         if (Array.isArray(data.blockedSites)) {
@@ -101,10 +98,7 @@ function migrateLegacyRules(callback) {
             productiveSites,
             siteMappings,
             blockedSiteMeta: data.blockedSiteMeta || {},
-            defaultProductiveSite: pickDefaultProductiveSite(data.defaultProductiveSite, productiveSites),
-            sessionConfig: data.sessionConfig || DEFAULT_SESSION_CONFIG,
-            sessionState: data.sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 },
-            timerMode: data.timerMode ?? false
+            defaultProductiveSite: pickDefaultProductiveSite(data.defaultProductiveSite, productiveSites)
         }, callback);
     });
 }
@@ -142,10 +136,7 @@ function migrateLegacySettings(settings, callback) {
         blockedSites,
         productiveSites,
         siteMappings,
-        defaultProductiveSite: pickDefaultProductiveSite(settings.defaultProductiveSite, productiveSites),
-        sessionConfig: settings.sessionConfig || DEFAULT_SESSION_CONFIG,
-        sessionState: settings.sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 },
-        timerMode: settings.timerMode ?? false
+        defaultProductiveSite: pickDefaultProductiveSite(settings.defaultProductiveSite, productiveSites)
     };
 
     chrome.storage.sync.set(patch, () => callback({ ...settings, ...patch }));

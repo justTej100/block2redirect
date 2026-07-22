@@ -28,60 +28,16 @@
 				<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
 				<button id="addProductiveBtn">Add</button>
 			</div>
+			<div class="row compact">
+				<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
+				<button id="saveDefaultBtn">Default</button>
+			</div>
 			<ul id="productiveSitesList" class="sites-grid"></ul>
 		</div>
 
 		<div class="panel site-mappings-panel">
 			<h3>Site Mappings</h3>
 			<ul id="mappingList" class="mappings-list"></ul>
-		</div>
-
-		<div class="panel modes-panel">
-			<h3>Modes</h3>
-			<div class="modes-grid">
-				<label class="toggle-label">
-					<input type="checkbox" id="focusToggle">
-					<span class="toggle-slider"></span>
-					<span>Focus</span>
-				</label>
-				<label class="toggle-label">
-					<input type="checkbox" id="randomToggle">
-					<span class="toggle-slider"></span>
-					<span>Random</span>
-				</label>
-				<label class="toggle-label">
-					<input type="checkbox" id="punishToggle">
-					<span class="toggle-slider"></span>
-					<span>Punish</span>
-				</label>
-				<label class="toggle-label">
-					<input type="checkbox" id="timerToggle">
-					<span class="toggle-slider"></span>
-					<span>Timer</span>
-				</label>
-			</div>
-			<div class="row compact">
-				<input type="number" id="punishThresholdInput" min="1" placeholder="Punish threshold" aria-label="Punishment threshold">
-				<button id="saveThresholdBtn">Save</button>
-			</div>
-			<div class="row compact">
-				<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
-				<button id="saveDefaultBtn">Default</button>
-			</div>
-		</div>
-
-		<div class="panel timer-panel">
-			<h3>Timer</h3>
-			<div class="row compact">
-				<input type="number" id="workMinutesInput" min="1" placeholder="Work" aria-label="Work minutes">
-				<input type="number" id="breakMinutesInput" min="1" placeholder="Break" aria-label="Break minutes">
-				<button id="saveSessionConfigBtn">Save</button>
-			</div>
-			<div class="row compact">
-				<button id="startSessionBtn">Start</button>
-				<button id="stopSessionBtn" class="danger">Stop</button>
-			</div>
-			<p id="sessionStatus" class="status-text">Session inactive</p>
 		</div>
 
 		<div class="panel stats-panel">

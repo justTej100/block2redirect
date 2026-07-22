@@ -76,48 +76,6 @@ function isWithinSchedule(start, end) {
     return minutes >= startMin && minutes <= endMin;
 }
 
-/** Resolve session state, auto-advancing phases if needed */
-function resolveSessionState(sessionState, sessionConfig) {
-    if (!sessionState || !sessionState.isActive) {
-        return sessionState || { isActive: false, phase: "work", startedAt: 0, endsAt: 0 };
-    }
-    const now = Date.now();
-    const resolved = {
-        ...sessionState,
-        phase: sessionState.phase === "break" ? "break" : "work"
-    };
-    const safeConfig = {
-        workMinutes: Number(sessionConfig?.workMinutes) || DEFAULT_SESSION_CONFIG.workMinutes,
-        breakMinutes: Number(sessionConfig?.breakMinutes) || DEFAULT_SESSION_CONFIG.breakMinutes
-    };
-    let guard = 0;
-    while (resolved.endsAt && now >= resolved.endsAt && guard < 10) {
-        if (resolved.phase === "work") {
-            resolved.phase = "break";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.breakMinutes * 60 * 1000;
-        } else {
-            resolved.phase = "work";
-            resolved.startedAt = resolved.endsAt;
-            resolved.endsAt = resolved.startedAt + safeConfig.workMinutes * 60 * 1000;
-        }
-        guard += 1;
-    }
-    if (!resolved.endsAt) {
-        resolved.isActive = false;
-    }
-    return resolved;
-}
-
-/** Format milliseconds into MM:SS display */
-function formatTimeLeft(ms) {
-    const safeMs = Math.max(0, ms);
-    const totalSeconds = Math.floor(safeMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 /** Get the currently active browser tab */
 function getCurrentTab(callback) {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

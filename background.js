@@ -40,32 +40,6 @@ function trackBlock(site) {
     });
 }
 
-function trackAttempt(site) {
-    chrome.storage.local.get(["attempts"], (data) => {
-        const attempts = data.attempts || {};
-        attempts[site] = (attempts[site] || 0) + 1;
-        chrome.storage.local.set({ attempts });
-    });
-}
-
-function shouldPunish(site, threshold, callback) {
-    chrome.storage.local.get(["attempts"], (data) => {
-        const attempts = data.attempts || {};
-        callback((attempts[site] || 0) >= threshold);
-    });
-}
-
-function shouldEnforceBlock(timerMode, sessionState, sessionConfig, dailySolves) {
-    // Solve ↔ redirect crossover: if no solves today, always enforce when focus is on
-    if (Number(dailySolves) === 0) {
-        return true;
-    }
-    if (!timerMode) return true;
-    const resolved = resolveSessionState(sessionState, sessionConfig);
-    if (!resolved.isActive) return false;
-    return resolved.phase === "work";
-}
-
 function chooseRedirectUrl(settings, blockedSite, legacyRule) {
     const siteMappings = settings.siteMappings || {};
     const productiveSites = (settings.productiveSites || []).map(ensureUrl).filter(Boolean);
@@ -75,13 +49,8 @@ function chooseRedirectUrl(settings, blockedSite, legacyRule) {
     const hasValidDefault = defaultProductiveSite && productiveSites.includes(defaultProductiveSite);
     const legacyRedirect = ensureUrl(legacyRule?.redirect);
     const validLegacyRedirect = legacyRedirect && productiveSites.includes(legacyRedirect);
-    const forceURL = ensureUrl(settings.forceURL);
 
-    if (settings.forceMode && forceURL) return forceURL;
     if (validMapped) return mapped;
-    if (settings.randomMode && productiveSites.length > 0) {
-        return productiveSites[Math.floor(Math.random() * productiveSites.length)];
-    }
     if (hasValidDefault) return defaultProductiveSite;
     if (validLegacyRedirect) return legacyRedirect;
     if (productiveSites.length > 0) return productiveSites[0];
@@ -100,24 +69,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     }
 
     chrome.storage.sync.get([
-        "focusMode",
-        "randomMode",
-        "forceMode",
-        "forceURL",
-        "punishmentMode",
-        "punishThreshold",
         "rules",
         "blockedSites",
         "productiveSites",
         "siteMappings",
-        "defaultProductiveSite",
-        "timerMode",
-        "sessionConfig",
-        "sessionState"
+        "defaultProductiveSite"
     ], (rawSettings) => {
         migrateLegacySettings(rawSettings, (settings) => {
-            if (settings.focusMode === false) return;
-
             const blockedSites = settings.blockedSites || [];
             const rules = settings.rules || [];
 
@@ -138,43 +96,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
             if (!blockedSite) return;
 
-            const sessionState = resolveSessionState(settings.sessionState, settings.sessionConfig);
-
-            if (
-                settings.timerMode &&
-                settings.sessionState &&
-                sessionState.phase !== settings.sessionState.phase
-            ) {
-                chrome.storage.sync.set({ sessionState });
+            const redirectURL = chooseRedirectUrl(settings, blockedSite, matchedRule);
+            if (!redirectURL || tab.url.startsWith(redirectURL)) {
+                return;
             }
 
-            getDailyStats((daily) => {
-                if (!shouldEnforceBlock(
-                    settings.timerMode,
-                    sessionState,
-                    settings.sessionConfig,
-                    daily.solves
-                )) {
-                    return;
-                }
-
-                trackAttempt(blockedSite);
-
-                shouldPunish(blockedSite, settings.punishThreshold || 5, (punish) => {
-                    let redirectURL = chooseRedirectUrl(settings, blockedSite, matchedRule);
-
-                    if (punish && settings.punishmentMode) {
-                        redirectURL = DEFAULT_PRODUCTIVE_SITES[0];
-                    }
-
-                    if (!redirectURL || tab.url.startsWith(redirectURL)) {
-                        return;
-                    }
-
-                    chrome.tabs.update(tabId, { url: redirectURL });
-                    trackBlock(blockedSite);
-                });
-            });
+            chrome.tabs.update(tabId, { url: redirectURL });
+            trackBlock(blockedSite);
         });
     });
 });
