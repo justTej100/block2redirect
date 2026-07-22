@@ -15,18 +15,18 @@
 	<div class="settings-container">
 		<div class="panel blocked-sites-panel">
 			<h3>Blocked Sites</h3>
-			<div class="row">
-				<input id="blockedSiteInput" placeholder="reddit.com" aria-label="Blocked site domain">
-				<button id="addBlockedBtn">Add</button>
+			<div class="row compact">
+				<input id="blockedSiteInput" type="text" placeholder="reddit.com" aria-label="Blocked site domain" autocomplete="off">
+				<button id="addBlockedBtn" type="button">Add</button>
 			</div>
 			<ul id="blockedSitesList" class="sites-grid"></ul>
 		</div>
 
 		<div class="panel productive-sites-panel">
 			<h3>Productive Sites</h3>
-			<div class="row">
-				<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
-				<button id="addProductiveBtn">Add</button>
+			<div class="row compact">
+				<input id="productiveSiteInput" type="text" placeholder="https://developer.mozilla.org" aria-label="Productive site URL" autocomplete="off">
+				<button id="addProductiveBtn" type="button">Add</button>
 			</div>
 			<div class="row compact">
 				<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
