@@ -29,6 +29,16 @@ function getAuthToken(interactive) {
     });
 }
 
+function removeCachedAuthToken(token) {
+    return new Promise((resolve) => {
+        if (!token) {
+            resolve();
+            return;
+        }
+        chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+    });
+}
+
 function explainGoogleAuthError(rawMessage) {
     const msg = String(rawMessage || "Google login failed");
     const extensionId = chrome.runtime.id;
@@ -38,21 +48,56 @@ function explainGoogleAuthError(rawMessage) {
     return `${msg} (extension ID: ${extensionId})`;
 }
 
-async function fetchGoogleUserProfile(accessToken) {
-    const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Google profile ${res.status}: ${text.slice(0, 120)}`);
+function normalizeGoogleUser(data) {
+    if (!data || typeof data !== "object") {
+        return { name: "", email: "", picture: "", id: "" };
     }
-    const data = await res.json();
     return {
-        name: data.name || data.given_name || "",
-        email: data.email || "",
-        picture: data.picture || "",
-        id: data.id || ""
+        name: String(data.name || data.given_name || "").trim(),
+        email: String(data.email || "").trim(),
+        picture: String(data.picture || "").trim(),
+        id: String(data.id || data.sub || "").trim()
     };
+}
+
+async function fetchGoogleUserProfile(accessToken) {
+    const endpoints = [
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        "https://www.googleapis.com/oauth2/v2/userinfo"
+    ];
+    let lastError = null;
+    for (const url of endpoints) {
+        try {
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            if (!res.ok) {
+                const text = await res.text();
+                lastError = new Error(`Google profile ${res.status}: ${text.slice(0, 120)}`);
+                continue;
+            }
+            const user = normalizeGoogleUser(await res.json());
+            if (user.name || user.email) return user;
+            lastError = new Error("Google profile returned empty name/email");
+        } catch (err) {
+            lastError = err;
+        }
+    }
+    throw lastError || new Error("Could not load Google profile");
+}
+
+/** Drop cached token and re-prompt so new scopes (profile/email) are granted. */
+async function getAuthTokenWithFreshScopes(interactive) {
+    try {
+        const stale = await getAuthToken(false);
+        await removeCachedAuthToken(stale);
+    } catch (_err) {
+        // no cached token
+    }
+    if (chrome.identity.clearAllCachedAuthTokens) {
+        await new Promise((resolve) => chrome.identity.clearAllCachedAuthTokens(() => resolve()));
+    }
+    return getAuthToken(interactive);
 }
 
 function googleDisplayName(user) {
@@ -66,15 +111,15 @@ async function connectGoogle() {
         throw new Error("Add oauth2.client_id to manifest.json (Google Chrome Extension OAuth client)");
     }
     // Prefer being called from an extension page (settings). SW interactive auth is unreliable.
-    const accessToken = await getAuthToken(true);
-    let user = null;
+    let accessToken = await getAuthToken(true);
+    let user;
     try {
         user = await fetchGoogleUserProfile(accessToken);
     } catch (_err) {
-        user = { name: "", email: "", picture: "", id: "" };
+        // Old cached tokens often lack userinfo scopes — force a fresh grant.
+        accessToken = await getAuthTokenWithFreshScopes(true);
+        user = await fetchGoogleUserProfile(accessToken);
     }
-    // Persist forever in chrome.storage.local until explicit Logout.
-    // Chrome also keeps the OAuth grant and silently refreshes via getAuthToken.
     await new Promise((resolve) => setSheetsConfig({
         accessToken,
         tokenExpiry: 0,
@@ -85,19 +130,19 @@ async function connectGoogle() {
 }
 
 /**
- * Restore Google session without prompting. Returns null if not signed in.
+ * Restore Google session without prompting.
  * Keeps profile + token cached in local storage for Settings display.
  */
 async function ensureGoogleSession() {
     try {
         const accessToken = await getAuthToken(false);
         const config = await new Promise((resolve) => getSheetsConfig(resolve));
-        let user = config.user;
-        if (!user?.name && !user?.email) {
+        let user = normalizeGoogleUser(config.user);
+        if (!user.name && !user.email) {
             try {
                 user = await fetchGoogleUserProfile(accessToken);
             } catch (_err) {
-                user = user || { name: "", email: "", picture: "", id: "" };
+                // Keep whatever we had; caller may still show signed-in from token.
             }
         }
         await new Promise((resolve) => setSheetsConfig({
@@ -115,15 +160,10 @@ async function ensureGoogleSession() {
 async function disconnectGoogle() {
     try {
         const token = await getAuthToken(false);
-        await new Promise((resolve) => {
-            chrome.identity.removeCachedAuthToken({ token }, () => {
-                if (chrome.identity.clearAllCachedAuthTokens) {
-                    chrome.identity.clearAllCachedAuthTokens(() => resolve());
-                } else {
-                    resolve();
-                }
-            });
-        });
+        await removeCachedAuthToken(token);
+        if (chrome.identity.clearAllCachedAuthTokens) {
+            await new Promise((resolve) => chrome.identity.clearAllCachedAuthTokens(() => resolve()));
+        }
     } catch (_err) {
         // already signed out
     }
@@ -157,12 +197,9 @@ async function sheetsFetch(path, options = {}) {
     });
     if (!res.ok) {
         const text = await res.text();
-        // Invalidate bad cached token once
         if (res.status === 401) {
             try {
-                await new Promise((resolve) => {
-                    chrome.identity.removeCachedAuthToken({ token }, () => resolve());
-                });
+                await removeCachedAuthToken(token);
             } catch (_e) {
                 // ignore
             }

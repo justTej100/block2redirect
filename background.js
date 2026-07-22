@@ -286,12 +286,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                 );
                 return {
                     githubConnected: Boolean(github.token),
-                    githubUser: github.user,
+                    githubUser: github.user ? normalizeGitHubUser(github.user) : null,
                     githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
                     githubAutoPush: github.autoPush,
                     githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
                     sheetsConnected: googleSignedIn,
-                    googleUser: sheets.user,
+                    googleUser: sheets.user ? normalizeGoogleUser(sheets.user) : null,
                     spreadsheetId: sheets.spreadsheetId,
                     spreadsheetUrl: sheets.spreadsheetUrl,
                     googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),

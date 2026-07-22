@@ -80,9 +80,21 @@ async function pollGitHubDeviceTokenOnce(deviceCode) {
 
 async function saveGitHubToken(token) {
     await new Promise((resolve) => setGitHubConfig({ token }, resolve));
-    const user = await fetchGitHubUser();
+    const raw = await fetchGitHubUser();
+    const user = normalizeGitHubUser(raw);
     await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
     return { user };
+}
+
+function normalizeGitHubUser(data) {
+    if (!data || typeof data !== "object") {
+        return { login: "", name: "", avatar_url: "" };
+    }
+    return {
+        login: String(data.login || "").trim(),
+        name: String(data.name || "").trim(),
+        avatar_url: String(data.avatar_url || "").trim()
+    };
 }
 
 function githubDisplayName(user) {

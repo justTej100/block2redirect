@@ -75,14 +75,24 @@ function sendMessage(message) {
 
 function setAccountCard(card, avatarEl, nameEl, metaEl, { visible, name, meta, picture }) {
     if (!card) return;
+    card.classList.toggle("is-visible", Boolean(visible));
     card.hidden = !visible;
-    if (!visible) return;
+    if (!visible) {
+        if (nameEl) nameEl.textContent = "";
+        if (metaEl) metaEl.textContent = "";
+        if (avatarEl) {
+            avatarEl.hidden = true;
+            avatarEl.removeAttribute("src");
+        }
+        return;
+    }
     if (nameEl) nameEl.textContent = name || "";
     if (metaEl) metaEl.textContent = meta || "";
     if (avatarEl) {
         if (picture) {
             avatarEl.hidden = false;
             avatarEl.src = picture;
+            avatarEl.alt = name || "Account avatar";
         } else {
             avatarEl.hidden = true;
             avatarEl.removeAttribute("src");
@@ -94,7 +104,9 @@ function applyToolkitStatus(status) {
     const ghName = githubDisplayName(status.githubUser);
     const ghLogin = status.githubUser?.login || "";
     if (status.githubConnected) {
-        githubStatus.textContent = "Signed in · stays logged in until Logout";
+        githubStatus.textContent = ghName
+            ? `Signed in as ${ghName}`
+            : "Signed in · stays logged in until Logout";
         githubStatus.dataset.kind = "success";
         setAccountCard(githubAccount, githubAvatar, githubAccountName, githubAccountMeta, {
             visible: true,
@@ -127,12 +139,14 @@ function applyToolkitStatus(status) {
     if (status.sheetsConnected) {
         const email = status.googleUser?.email || "";
         const sheetBit = status.spreadsheetUrl ? "Sheet linked" : "Paste a Sheet URL below";
-        sheetsStatus.textContent = "Signed in · stays logged in until Logout";
+        sheetsStatus.textContent = gName
+            ? `Signed in as ${gName}`
+            : "Signed in · stays logged in until Logout";
         sheetsStatus.dataset.kind = "success";
         setAccountCard(googleAccount, googleAvatar, googleAccountName, googleAccountMeta, {
             visible: true,
-            name: gName || "Google user",
-            meta: [email, sheetBit].filter(Boolean).join(" · "),
+            name: gName || email || "Google user",
+            meta: [email && email !== gName ? email : "", sheetBit].filter(Boolean).join(" · "),
             picture: status.googleUser?.picture || ""
         });
         if (googleConnectBtn) googleConnectBtn.hidden = true;
@@ -158,41 +172,57 @@ function applyToolkitStatus(status) {
 }
 
 async function readToolkitStatusLocally() {
-    // Restore Google from Chrome's persistent identity cache (no prompt)
-    await ensureGoogleSession();
+    const googleSession = await ensureGoogleSession();
 
     const github = await new Promise((resolve) => getGitHubConfig(resolve));
     const sheets = await new Promise((resolve) => getSheetsConfig(resolve));
     const cf = await new Promise((resolve) => getCodeforcesState(resolve));
 
-    // Treat stored GitHub token as permanent until Logout
     let githubConnected = Boolean(github.token);
-    if (githubConnected && !github.user) {
-        try {
-            const user = await fetchGitHubUser();
-            await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
-            github.user = user;
-        } catch (_err) {
-            // token may be invalid — keep showing connected only if token exists
+    if (githubConnected) {
+        const hasIdentity = Boolean(github.user?.login || github.user?.name);
+        if (!hasIdentity) {
+            try {
+                const raw = await fetchGitHubUser();
+                const user = normalizeGitHubUser(raw);
+                await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
+                github.user = user;
+            } catch (_err) {
+                // token may be invalid — still treat as connected if token exists
+            }
+        } else {
+            github.user = normalizeGitHubUser(github.user);
         }
     }
 
-    const googleSignedIn = Boolean(sheets.signedIn) || Boolean(sheets.user) || Boolean(sheets.accessToken);
+    const googleUser = normalizeGoogleUser(
+        googleSession.user || sheets.user
+    );
+    const googleSignedIn = Boolean(googleSession.signedIn) ||
+        Boolean(sheets.signedIn) ||
+        Boolean(sheets.accessToken) ||
+        Boolean(googleUser.name || googleUser.email);
 
     return {
         githubConnected,
-        githubUser: github.user,
+        githubUser: github.user || null,
         githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
         githubAutoPush: github.autoPush,
         githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
         sheetsConnected: googleSignedIn,
-        googleUser: sheets.user,
+        googleUser: googleSignedIn ? googleUser : null,
         spreadsheetId: sheets.spreadsheetId,
         spreadsheetUrl: sheets.spreadsheetUrl,
         googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),
         jobAppGoal: sheets.jobAppGoal,
         cfHandle: cf.handle
     };
+}
+
+function preferUser(a, b) {
+    const aScore = (a?.name ? 2 : 0) + (a?.email || a?.login ? 1 : 0) + (a?.picture || a?.avatar_url ? 1 : 0);
+    const bScore = (b?.name ? 2 : 0) + (b?.email || b?.login ? 1 : 0) + (b?.picture || b?.avatar_url ? 1 : 0);
+    return aScore >= bScore ? (a || b) : (b || a);
 }
 
 async function refreshToolkitStatus() {
@@ -202,8 +232,8 @@ async function refreshToolkitStatus() {
         const status = await sendMessage({ type: "GET_SYNC_STATUS" });
         applyToolkitStatus({
             ...status,
-            googleUser: status.googleUser || localStatus.googleUser,
-            githubUser: status.githubUser || localStatus.githubUser,
+            googleUser: preferUser(localStatus.googleUser, status.googleUser),
+            githubUser: preferUser(localStatus.githubUser, status.githubUser),
             sheetsConnected: status.sheetsConnected || localStatus.sheetsConnected,
             githubConnected: status.githubConnected || localStatus.githubConnected
         });
@@ -463,8 +493,12 @@ async function connectGitHub() {
             }
             if (poll.status === "ok") {
                 const result = await saveGitHubToken(poll.token);
-                githubDeviceHint.textContent = `Logged in as ${githubDisplayName(result.user)}`;
-                githubDeviceHint.dataset.kind = "success";
+                applyToolkitStatus({
+                    ...(await readToolkitStatusLocally()),
+                    githubConnected: true,
+                    githubUser: result.user
+                });
+                githubDeviceHint.hidden = true;
                 await refreshToolkitStatus();
                 return;
             }
@@ -498,9 +532,12 @@ githubPatSaveBtn.onclick = async () => {
     try {
         const result = await saveGitHubToken((githubPatInput.value || "").trim());
         githubPatInput.value = "";
-        githubStatus.textContent = `Logged in as ${githubDisplayName(result.user)} (@${result.user?.login || "user"})`;
-        githubStatus.dataset.kind = "success";
         githubDeviceHint.hidden = true;
+        applyToolkitStatus({
+            ...(await readToolkitStatusLocally()),
+            githubConnected: true,
+            githubUser: result.user
+        });
         await refreshToolkitStatus();
     } catch (err) {
         githubStatus.textContent = err.message;
@@ -562,8 +599,11 @@ googleConnectBtn.onclick = async () => {
         sheetsStatus.dataset.kind = "info";
         // Must run in this page — interactive getAuthToken from the service worker often shows no UI
         const result = await connectGoogle();
-        sheetsStatus.textContent = `Logged in as ${googleDisplayName(result.user)}${result.user?.email ? ` (${result.user.email})` : ""}`;
-        sheetsStatus.dataset.kind = "success";
+        applyToolkitStatus({
+            ...(await readToolkitStatusLocally()),
+            sheetsConnected: true,
+            googleUser: result.user
+        });
         await refreshToolkitStatus();
     } catch (err) {
         sheetsStatus.textContent = err.message;

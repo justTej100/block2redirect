@@ -388,7 +388,7 @@ label {
 }
 
 .account-card {
-	display: flex;
+	display: none;
 	align-items: center;
 	gap: 10px;
 	background: var(--bg);
@@ -399,6 +399,10 @@ label {
 	flex: 0 0 auto;
 }
 
+.account-card.is-visible {
+	display: flex;
+}
+
 .account-avatar {
 	width: 36px;
 	height: 36px;
@@ -406,6 +410,10 @@ label {
 	object-fit: cover;
 	background: var(--panel-2);
 	flex: 0 0 36px;
+}
+
+.account-avatar[hidden] {
+	display: none !important;
 }
 
 .account-text {
