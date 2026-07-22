@@ -8,143 +8,136 @@
 </head>
 
 <body class="settings-page">
-	<h1>Settings</h1>
+	<header class="settings-header">
+		<h1>Settings</h1>
+	</header>
 
 	<div class="settings-container">
-		<div class="settings-left">
-			<div class="panel blocked-sites-panel">
-				<h3>Blocked Sites</h3>
-				<div class="row">
-					<input id="blockedSiteInput" placeholder="reddit.com" aria-label="Blocked site domain">
-					<button id="addBlockedBtn">Add</button>
-				</div>
-				<ul id="blockedSitesList" class="sites-grid"></ul>
+		<div class="panel blocked-sites-panel">
+			<h3>Blocked Sites</h3>
+			<div class="row">
+				<input id="blockedSiteInput" placeholder="reddit.com" aria-label="Blocked site domain">
+				<button id="addBlockedBtn">Add</button>
 			</div>
-
-			<div class="panel productive-sites-panel">
-				<h3>Productive Sites</h3>
-				<div class="row">
-					<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
-					<button id="addProductiveBtn">Add</button>
-				</div>
-				<ul id="productiveSitesList" class="sites-grid"></ul>
-			</div>
-
-			<div class="panel site-mappings-panel">
-				<h3>Site Mappings</h3>
-				<p class="status-text">Map blocked sites to specific productive sites</p>
-				<ul id="mappingList" class="mappings-list"></ul>
-			</div>
-
-			<div class="panel github-panel">
-				<h3>GitHub Solve Sync</h3>
-				<p id="githubStatus" class="status-text">Not connected</p>
-				<div class="row">
-					<input id="githubClientIdInput" type="text" placeholder="GitHub OAuth App client ID" aria-label="GitHub OAuth client ID" autocomplete="off">
-					<button id="githubClientIdSaveBtn" type="button">Save</button>
-				</div>
-				<div class="row">
-					<button id="githubConnectBtn" type="button">Connect GitHub</button>
-					<button id="githubDisconnectBtn" type="button" class="danger">Disconnect</button>
-				</div>
-				<p id="githubDeviceHint" class="status-text" hidden></p>
-				<div class="row">
-					<select id="githubRepoSelect" aria-label="GitHub repository"></select>
-					<button id="githubRefreshReposBtn" type="button" class="secondary">Refresh</button>
-				</div>
-				<div class="row">
-					<input id="githubNewRepoInput" placeholder="new-repo-name" aria-label="New repo name">
-					<button id="githubCreateRepoBtn" type="button">Create repo</button>
-				</div>
-				<label class="toggle-label">
-					<input type="checkbox" id="githubAutoPushToggle" checked>
-					<span class="toggle-slider"></span>
-					<span>Auto-push solves</span>
-				</label>
-				<div class="row">
-					<input id="cfHandleInput" placeholder="Codeforces handle" aria-label="Codeforces handle">
-					<button id="cfHandleSaveBtn" type="button">Save CF handle</button>
-				</div>
-			</div>
+			<ul id="blockedSitesList" class="sites-grid"></ul>
 		</div>
 
-		<div class="settings-right">
-			<div class="panel stats-panel">
-				<h3>Blocked Attempts</h3>
-				<ul id="statsList" class="stats-list"></ul>
+		<div class="panel productive-sites-panel">
+			<h3>Productive Sites</h3>
+			<div class="row">
+				<input id="productiveSiteInput" placeholder="https://developer.mozilla.org" aria-label="Productive site URL">
+				<button id="addProductiveBtn">Add</button>
 			</div>
+			<ul id="productiveSitesList" class="sites-grid"></ul>
+		</div>
 
-			<div class="panel modes-panel">
-				<h3>Modes</h3>
+		<div class="panel site-mappings-panel">
+			<h3>Site Mappings</h3>
+			<ul id="mappingList" class="mappings-list"></ul>
+		</div>
+
+		<div class="panel modes-panel">
+			<h3>Modes</h3>
+			<div class="modes-grid">
 				<label class="toggle-label">
 					<input type="checkbox" id="focusToggle">
 					<span class="toggle-slider"></span>
-					<span>Focus Mode</span>
+					<span>Focus</span>
 				</label>
 				<label class="toggle-label">
 					<input type="checkbox" id="randomToggle">
 					<span class="toggle-slider"></span>
-					<span>Random Productive</span>
+					<span>Random</span>
 				</label>
 				<label class="toggle-label">
 					<input type="checkbox" id="punishToggle">
 					<span class="toggle-slider"></span>
-					<span>Punishment Mode</span>
+					<span>Punish</span>
 				</label>
 				<label class="toggle-label">
 					<input type="checkbox" id="timerToggle">
 					<span class="toggle-slider"></span>
-					<span>Timer Mode</span>
+					<span>Timer</span>
 				</label>
 			</div>
-
-			<div class="panel timer-panel">
-				<h3>Timer Sessions</h3>
-				<div class="row">
-					<input type="number" id="workMinutesInput" min="1" placeholder="Work min" aria-label="Work minutes">
-					<input type="number" id="breakMinutesInput" min="1" placeholder="Break min" aria-label="Break minutes">
-					<button id="saveSessionConfigBtn">Save</button>
-				</div>
-				<div class="row">
-					<button id="startSessionBtn">Start</button>
-					<button id="stopSessionBtn" class="danger">Stop</button>
-				</div>
-				<p id="sessionStatus" class="status-text">Session inactive</p>
+			<div class="row compact">
+				<input type="number" id="punishThresholdInput" min="1" placeholder="Punish threshold" aria-label="Punishment threshold">
+				<button id="saveThresholdBtn">Save</button>
 			</div>
-
-			<div class="panel other-panel">
-				<h3>Additional Settings</h3>
-				<div class="row">
-					<input type="number" id="punishThresholdInput" min="1" placeholder="Punishment threshold" aria-label="Punishment threshold">
-					<button id="saveThresholdBtn">Save</button>
-				</div>
-				<div class="row">
-					<label>Default Redirect:</label>
-					<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
-					<button id="saveDefaultBtn">Set</button>
-				</div>
+			<div class="row compact">
+				<select id="defaultProductiveSelect" aria-label="Default productive site"></select>
+				<button id="saveDefaultBtn">Default</button>
 			</div>
+		</div>
 
-			<div class="panel sheets-panel">
-				<h3>Job Tracker (Google Sheets)</h3>
-				<p id="sheetsStatus" class="status-text">Not connected</p>
-				<div class="row">
-					<input id="googleClientIdInput" type="text" placeholder="Google OAuth client ID" aria-label="Google OAuth client ID" autocomplete="off">
-					<button id="googleClientIdSaveBtn" type="button">Save</button>
-				</div>
-				<div class="row">
-					<button id="googleConnectBtn" type="button">Connect Google</button>
-					<button id="googleDisconnectBtn" type="button" class="danger">Disconnect</button>
-				</div>
-				<div class="row">
-					<input id="sheetUrlInput" placeholder="Google Sheet URL" aria-label="Google Sheet URL">
-					<button id="sheetLinkBtn" type="button">Link sheet</button>
-				</div>
-				<div class="row">
-					<input type="number" id="jobGoalInput" min="1" placeholder="Daily app goal" aria-label="Daily application goal">
-					<button id="jobGoalSaveBtn" type="button">Save goal</button>
-				</div>
-				<p class="status-text">Columns: Date | Company | Role | Location | Source | Link | Status | Follow-up | Notes</p>
+		<div class="panel timer-panel">
+			<h3>Timer</h3>
+			<div class="row compact">
+				<input type="number" id="workMinutesInput" min="1" placeholder="Work" aria-label="Work minutes">
+				<input type="number" id="breakMinutesInput" min="1" placeholder="Break" aria-label="Break minutes">
+				<button id="saveSessionConfigBtn">Save</button>
+			</div>
+			<div class="row compact">
+				<button id="startSessionBtn">Start</button>
+				<button id="stopSessionBtn" class="danger">Stop</button>
+			</div>
+			<p id="sessionStatus" class="status-text">Session inactive</p>
+		</div>
+
+		<div class="panel stats-panel">
+			<h3>Blocked Attempts</h3>
+			<ul id="statsList" class="stats-list"></ul>
+		</div>
+
+		<div class="panel github-panel">
+			<h3>GitHub Sync</h3>
+			<p id="githubStatus" class="status-text">Not connected</p>
+			<div class="row compact">
+				<input id="githubClientIdInput" type="text" placeholder="OAuth client ID" aria-label="GitHub OAuth client ID" autocomplete="off">
+				<button id="githubClientIdSaveBtn" type="button">Save</button>
+			</div>
+			<div class="row compact">
+				<button id="githubConnectBtn" type="button">Connect</button>
+				<button id="githubDisconnectBtn" type="button" class="danger">Disconnect</button>
+			</div>
+			<p id="githubDeviceHint" class="status-text" hidden></p>
+			<div class="row compact">
+				<select id="githubRepoSelect" aria-label="GitHub repository"></select>
+				<button id="githubRefreshReposBtn" type="button" class="secondary">↻</button>
+			</div>
+			<div class="row compact">
+				<input id="githubNewRepoInput" placeholder="new-repo" aria-label="New repo name">
+				<button id="githubCreateRepoBtn" type="button">Create</button>
+			</div>
+			<label class="toggle-label">
+				<input type="checkbox" id="githubAutoPushToggle" checked>
+				<span class="toggle-slider"></span>
+				<span>Auto-push</span>
+			</label>
+			<div class="row compact">
+				<input id="cfHandleInput" placeholder="CF handle" aria-label="Codeforces handle">
+				<button id="cfHandleSaveBtn" type="button">Save</button>
+			</div>
+		</div>
+
+		<div class="panel sheets-panel">
+			<h3>Job Tracker</h3>
+			<p id="sheetsStatus" class="status-text">Not connected</p>
+			<div class="row compact">
+				<input id="googleClientIdInput" type="text" placeholder="Google OAuth client ID" aria-label="Google OAuth client ID" autocomplete="off">
+				<button id="googleClientIdSaveBtn" type="button">Save</button>
+			</div>
+			<div class="row compact">
+				<button id="googleConnectBtn" type="button">Connect</button>
+				<button id="googleDisconnectBtn" type="button" class="danger">Disconnect</button>
+			</div>
+			<div class="row compact">
+				<input id="sheetUrlInput" placeholder="Sheet URL" aria-label="Google Sheet URL">
+				<button id="sheetLinkBtn" type="button">Link</button>
+			</div>
+			<div class="row compact">
+				<input type="number" id="jobGoalInput" min="1" placeholder="Daily goal" aria-label="Daily application goal">
+				<button id="jobGoalSaveBtn" type="button">Goal</button>
 			</div>
 		</div>
 	</div>
