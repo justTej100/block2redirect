@@ -363,6 +363,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     githubAutoPush: github.autoPush,
                     githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
                     sheetsConnected: googleSignedIn,
+                    googleUser: sheets.user,
                     spreadsheetId: sheets.spreadsheetId,
                     spreadsheetUrl: sheets.spreadsheetUrl,
                     googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),

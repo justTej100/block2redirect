@@ -80,8 +80,10 @@ function sendMessage(message) {
 }
 
 function applyToolkitStatus(status) {
+    const ghName = githubDisplayName(status.githubUser);
     if (status.githubConnected) {
-        githubStatus.textContent = `Logged in as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
+        const handle = status.githubUser?.login ? ` (@${status.githubUser.login})` : "";
+        githubStatus.textContent = `Logged in as ${ghName || "user"}${handle}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
         githubStatus.dataset.kind = "success";
     } else if (!status.githubLoginReady) {
         githubStatus.textContent = "Login unavailable — set GITHUB_OAUTH_CLIENT_ID in util/constants.js";
@@ -93,10 +95,11 @@ function applyToolkitStatus(status) {
     githubAutoPushToggle.checked = status.githubAutoPush !== false;
     cfHandleInput.value = status.cfHandle || "";
 
-    if (status.sheetsConnected || status.spreadsheetId) {
-        sheetsStatus.textContent = status.spreadsheetUrl
-            ? `Sheet linked: ${status.spreadsheetUrl}`
-            : (status.sheetsConnected ? "Logged in — paste a Sheet URL" : "Not logged in");
+    const gName = googleDisplayName(status.googleUser);
+    if (status.sheetsConnected) {
+        const email = status.googleUser?.email ? ` (${status.googleUser.email})` : "";
+        const sheetBit = status.spreadsheetUrl ? ` · sheet linked` : " — paste a Sheet URL";
+        sheetsStatus.textContent = `Logged in as ${gName || "Google user"}${email}${sheetBit}`;
         sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
     } else if (!status.googleLoginReady) {
         sheetsStatus.textContent = "Login unavailable — add oauth2.client_id in manifest.json";
@@ -111,20 +114,29 @@ function applyToolkitStatus(status) {
 
 async function readToolkitStatusLocally() {
     const github = await new Promise((resolve) => getGitHubConfig(resolve));
-    const sheets = await new Promise((resolve) => getSheetsConfig(resolve));
+    let sheets = await new Promise((resolve) => getSheetsConfig(resolve));
     const cf = await new Promise((resolve) => getCodeforcesState(resolve));
     let googleSignedIn = Boolean(sheets.accessToken);
     try {
-        await new Promise((resolve, reject) => {
-            chrome.identity.getAuthToken({ interactive: false }, (token) => {
-                if (chrome.runtime.lastError || !token) {
+        const token = await new Promise((resolve, reject) => {
+            chrome.identity.getAuthToken({ interactive: false }, (t) => {
+                if (chrome.runtime.lastError || !t) {
                     reject(new Error("no token"));
                     return;
                 }
-                googleSignedIn = true;
-                resolve(token);
+                resolve(t);
             });
         });
+        googleSignedIn = true;
+        if (!sheets.user?.name && !sheets.user?.email) {
+            try {
+                const user = await fetchGoogleUserProfile(token);
+                await new Promise((resolve) => setSheetsConfig({ user }, resolve));
+                sheets = { ...sheets, user };
+            } catch (_profileErr) {
+                // ignore
+            }
+        }
     } catch (_err) {
         // not signed in
     }
@@ -135,6 +147,7 @@ async function readToolkitStatusLocally() {
         githubAutoPush: github.autoPush,
         githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
         sheetsConnected: googleSignedIn,
+        googleUser: sheets.user,
         spreadsheetId: sheets.spreadsheetId,
         spreadsheetUrl: sheets.spreadsheetUrl,
         googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),
@@ -452,7 +465,13 @@ async function connectGitHub() {
             || `${device.verification_uri || "https://github.com/login/device"}?user_code=${encodeURIComponent(userCode)}`;
 
         await chrome.tabs.create({ url: loginUrl });
-        githubDeviceHint.innerHTML = `Code <b>${userCode}</b> — confirm on the GitHub tab, then return here. Waiting...`;
+        githubDeviceHint.dataset.kind = "info";
+        githubDeviceHint.innerHTML =
+            `Your GitHub code is <b style="font-size:16px;letter-spacing:0.08em">${userCode}</b><br>` +
+            `Type that into the GitHub tab (or it may already be filled), then click Continue / Authorize.<br>` +
+            `Keep this Settings tab open — waiting for approval...`;
+        githubStatus.textContent = `GitHub code: ${userCode}`;
+        githubStatus.dataset.kind = "info";
 
         const intervalMs = Math.max(5, Number(device.interval) || 5) * 1000;
         const deadline = Date.now() + 14 * 60 * 1000;
@@ -466,7 +485,7 @@ async function connectGitHub() {
             }
             if (poll.status === "ok") {
                 const result = await saveGitHubToken(poll.token);
-                githubDeviceHint.textContent = `Logged in as ${result.user?.login || "user"}`;
+                githubDeviceHint.textContent = `Logged in as ${githubDisplayName(result.user)}`;
                 githubDeviceHint.dataset.kind = "success";
                 await refreshToolkitStatus();
                 return;
@@ -510,7 +529,7 @@ githubPatSaveBtn.onclick = async () => {
     try {
         const result = await saveGitHubToken((githubPatInput.value || "").trim());
         githubPatInput.value = "";
-        githubStatus.textContent = `Logged in as ${result.user?.login || "user"} (PAT)`;
+        githubStatus.textContent = `Logged in as ${githubDisplayName(result.user)} (@${result.user?.login || "user"})`;
         githubStatus.dataset.kind = "success";
         githubDeviceHint.hidden = true;
         await refreshToolkitStatus();
@@ -573,8 +592,8 @@ googleConnectBtn.onclick = async () => {
         sheetsStatus.textContent = "Opening Google login...";
         sheetsStatus.dataset.kind = "info";
         // Must run in this page — interactive getAuthToken from the service worker often shows no UI
-        await connectGoogle();
-        sheetsStatus.textContent = "Logged in with Google";
+        const result = await connectGoogle();
+        sheetsStatus.textContent = `Logged in as ${googleDisplayName(result.user)}${result.user?.email ? ` (${result.user.email})` : ""}`;
         sheetsStatus.dataset.kind = "success";
         await refreshToolkitStatus();
     } catch (err) {

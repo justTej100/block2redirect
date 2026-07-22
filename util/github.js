@@ -85,6 +85,11 @@ async function saveGitHubToken(token) {
     return { user };
 }
 
+function githubDisplayName(user) {
+    if (!user) return "";
+    return user.name || user.login || "GitHub user";
+}
+
 async function githubApi(path, options = {}) {
     const config = await new Promise((resolve) => getGitHubConfig(resolve));
     if (!config.token) {

@@ -38,6 +38,28 @@ function explainGoogleAuthError(rawMessage) {
     return `${msg} (extension ID: ${extensionId})`;
 }
 
+async function fetchGoogleUserProfile(accessToken) {
+    const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Google profile ${res.status}: ${text.slice(0, 120)}`);
+    }
+    const data = await res.json();
+    return {
+        name: data.name || data.given_name || "",
+        email: data.email || "",
+        picture: data.picture || "",
+        id: data.id || ""
+    };
+}
+
+function googleDisplayName(user) {
+    if (!user) return "";
+    return user.name || user.email || "Google user";
+}
+
 async function connectGoogle() {
     const manifest = chrome.runtime.getManifest();
     if (!manifest.oauth2?.client_id) {
@@ -45,11 +67,18 @@ async function connectGoogle() {
     }
     // Prefer being called from an extension page (settings). SW interactive auth is unreliable.
     const accessToken = await getAuthToken(true);
+    let user = null;
+    try {
+        user = await fetchGoogleUserProfile(accessToken);
+    } catch (_err) {
+        user = { name: "", email: "", picture: "", id: "" };
+    }
     await new Promise((resolve) => setSheetsConfig({
         accessToken,
-        tokenExpiry: Date.now() + 55 * 60 * 1000
+        tokenExpiry: Date.now() + 55 * 60 * 1000,
+        user
     }, resolve));
-    return { accessToken };
+    return { accessToken, user };
 }
 
 async function disconnectGoogle() {

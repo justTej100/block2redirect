@@ -227,7 +227,8 @@ function getSheetsConfig(callback) {
         "spreadsheetId",
         "spreadsheetUrl",
         "jobAppGoal",
-        "loggedJobUrls"
+        "loggedJobUrls",
+        "googleUser"
     ], (data) => {
         callback({
             accessToken: data.googleAccessToken || "",
@@ -235,7 +236,8 @@ function getSheetsConfig(callback) {
             spreadsheetId: data.spreadsheetId || "",
             spreadsheetUrl: data.spreadsheetUrl || "",
             jobAppGoal: Number(data.jobAppGoal) || 5,
-            loggedJobUrls: data.loggedJobUrls || []
+            loggedJobUrls: data.loggedJobUrls || [],
+            user: data.googleUser || null
         });
     });
 }
@@ -248,13 +250,15 @@ function setSheetsConfig(patch, callback) {
     if ("spreadsheetUrl" in patch) mapped.spreadsheetUrl = patch.spreadsheetUrl;
     if ("jobAppGoal" in patch) mapped.jobAppGoal = patch.jobAppGoal;
     if ("loggedJobUrls" in patch) mapped.loggedJobUrls = patch.loggedJobUrls;
+    if ("user" in patch) mapped.googleUser = patch.user;
     setLocal(mapped, callback);
 }
 
 function clearGoogleAuth(callback) {
     setLocal({
         googleAccessToken: "",
-        googleTokenExpiry: 0
+        googleTokenExpiry: 0,
+        googleUser: null
     }, callback);
 }
 
