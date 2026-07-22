@@ -34,6 +34,10 @@ const statsList = document.getElementById("statsList");
 
 const githubStatus = document.getElementById("githubStatus");
 const githubDeviceHint = document.getElementById("githubDeviceHint");
+const githubAccount = document.getElementById("githubAccount");
+const githubAvatar = document.getElementById("githubAvatar");
+const githubAccountName = document.getElementById("githubAccountName");
+const githubAccountMeta = document.getElementById("githubAccountMeta");
 const githubConnectBtn = document.getElementById("githubConnectBtn");
 const githubDisconnectBtn = document.getElementById("githubDisconnectBtn");
 const githubPatInput = document.getElementById("githubPatInput");
@@ -48,6 +52,10 @@ const cfHandleSaveBtn = document.getElementById("cfHandleSaveBtn");
 
 const sheetsStatus = document.getElementById("sheetsStatus");
 const googleExtIdHint = document.getElementById("googleExtIdHint");
+const googleAccount = document.getElementById("googleAccount");
+const googleAvatar = document.getElementById("googleAvatar");
+const googleAccountName = document.getElementById("googleAccountName");
+const googleAccountMeta = document.getElementById("googleAccountMeta");
 const googleConnectBtn = document.getElementById("googleConnectBtn");
 const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
 const sheetUrlInput = document.getElementById("sheetUrlInput");
@@ -79,69 +87,114 @@ function sendMessage(message) {
     });
 }
 
+function setAccountCard(card, avatarEl, nameEl, metaEl, { visible, name, meta, picture }) {
+    if (!card) return;
+    card.hidden = !visible;
+    if (!visible) return;
+    if (nameEl) nameEl.textContent = name || "";
+    if (metaEl) metaEl.textContent = meta || "";
+    if (avatarEl) {
+        if (picture) {
+            avatarEl.hidden = false;
+            avatarEl.src = picture;
+        } else {
+            avatarEl.hidden = true;
+            avatarEl.removeAttribute("src");
+        }
+    }
+}
+
 function applyToolkitStatus(status) {
     const ghName = githubDisplayName(status.githubUser);
+    const ghLogin = status.githubUser?.login || "";
     if (status.githubConnected) {
-        const handle = status.githubUser?.login ? ` (@${status.githubUser.login})` : "";
-        githubStatus.textContent = `Logged in as ${ghName || "user"}${handle}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
+        githubStatus.textContent = "Signed in · stays logged in until Logout";
         githubStatus.dataset.kind = "success";
+        setAccountCard(githubAccount, githubAvatar, githubAccountName, githubAccountMeta, {
+            visible: true,
+            name: ghName || ghLogin || "GitHub user",
+            meta: [ghLogin ? `@${ghLogin}` : "", status.githubRepo || ""].filter(Boolean).join(" · "),
+            picture: status.githubUser?.avatar_url || ""
+        });
+        if (githubConnectBtn) githubConnectBtn.hidden = true;
+        if (githubDisconnectBtn) githubDisconnectBtn.hidden = false;
+        if (githubPatInput?.parentElement) githubPatInput.parentElement.classList.add("hidden-when-authed");
     } else if (!status.githubLoginReady) {
         githubStatus.textContent = "Login unavailable — set GITHUB_OAUTH_CLIENT_ID in util/constants.js";
         githubStatus.dataset.kind = "info";
+        setAccountCard(githubAccount, githubAvatar, githubAccountName, githubAccountMeta, { visible: false });
+        if (githubConnectBtn) githubConnectBtn.hidden = false;
+        if (githubDisconnectBtn) githubDisconnectBtn.hidden = true;
+        if (githubPatInput?.parentElement) githubPatInput.parentElement.classList.remove("hidden-when-authed");
     } else {
         githubStatus.textContent = "Not logged in";
         githubStatus.dataset.kind = "info";
+        setAccountCard(githubAccount, githubAvatar, githubAccountName, githubAccountMeta, { visible: false });
+        if (githubConnectBtn) githubConnectBtn.hidden = false;
+        if (githubDisconnectBtn) githubDisconnectBtn.hidden = true;
+        if (githubPatInput?.parentElement) githubPatInput.parentElement.classList.remove("hidden-when-authed");
     }
     githubAutoPushToggle.checked = status.githubAutoPush !== false;
     cfHandleInput.value = status.cfHandle || "";
 
     const gName = googleDisplayName(status.googleUser);
     if (status.sheetsConnected) {
-        const email = status.googleUser?.email ? ` (${status.googleUser.email})` : "";
-        const sheetBit = status.spreadsheetUrl ? ` · sheet linked` : " — paste a Sheet URL";
-        sheetsStatus.textContent = `Logged in as ${gName || "Google user"}${email}${sheetBit}`;
-        sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
+        const email = status.googleUser?.email || "";
+        const sheetBit = status.spreadsheetUrl ? "Sheet linked" : "Paste a Sheet URL below";
+        sheetsStatus.textContent = "Signed in · stays logged in until Logout";
+        sheetsStatus.dataset.kind = "success";
+        setAccountCard(googleAccount, googleAvatar, googleAccountName, googleAccountMeta, {
+            visible: true,
+            name: gName || "Google user",
+            meta: [email, sheetBit].filter(Boolean).join(" · "),
+            picture: status.googleUser?.picture || ""
+        });
+        if (googleConnectBtn) googleConnectBtn.hidden = true;
+        if (googleDisconnectBtn) googleDisconnectBtn.hidden = false;
+        if (googleExtIdHint) googleExtIdHint.hidden = true;
     } else if (!status.googleLoginReady) {
         sheetsStatus.textContent = "Login unavailable — add oauth2.client_id in manifest.json";
         sheetsStatus.dataset.kind = "info";
+        setAccountCard(googleAccount, googleAvatar, googleAccountName, googleAccountMeta, { visible: false });
+        if (googleConnectBtn) googleConnectBtn.hidden = false;
+        if (googleDisconnectBtn) googleDisconnectBtn.hidden = true;
+        if (googleExtIdHint) googleExtIdHint.hidden = false;
     } else {
         sheetsStatus.textContent = "Not logged in — click Login with Google";
         sheetsStatus.dataset.kind = "info";
+        setAccountCard(googleAccount, googleAvatar, googleAccountName, googleAccountMeta, { visible: false });
+        if (googleConnectBtn) googleConnectBtn.hidden = false;
+        if (googleDisconnectBtn) googleDisconnectBtn.hidden = true;
+        if (googleExtIdHint) googleExtIdHint.hidden = false;
     }
     if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
     jobGoalInput.value = status.jobAppGoal || 5;
 }
 
 async function readToolkitStatusLocally() {
+    // Restore Google from Chrome's persistent identity cache (no prompt)
+    await ensureGoogleSession();
+
     const github = await new Promise((resolve) => getGitHubConfig(resolve));
-    let sheets = await new Promise((resolve) => getSheetsConfig(resolve));
+    const sheets = await new Promise((resolve) => getSheetsConfig(resolve));
     const cf = await new Promise((resolve) => getCodeforcesState(resolve));
-    let googleSignedIn = Boolean(sheets.accessToken);
-    try {
-        const token = await new Promise((resolve, reject) => {
-            chrome.identity.getAuthToken({ interactive: false }, (t) => {
-                if (chrome.runtime.lastError || !t) {
-                    reject(new Error("no token"));
-                    return;
-                }
-                resolve(t);
-            });
-        });
-        googleSignedIn = true;
-        if (!sheets.user?.name && !sheets.user?.email) {
-            try {
-                const user = await fetchGoogleUserProfile(token);
-                await new Promise((resolve) => setSheetsConfig({ user }, resolve));
-                sheets = { ...sheets, user };
-            } catch (_profileErr) {
-                // ignore
-            }
+
+    // Treat stored GitHub token as permanent until Logout
+    let githubConnected = Boolean(github.token);
+    if (githubConnected && !github.user) {
+        try {
+            const user = await fetchGitHubUser();
+            await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
+            github.user = user;
+        } catch (_err) {
+            // token may be invalid — keep showing connected only if token exists
         }
-    } catch (_err) {
-        // not signed in
     }
+
+    const googleSignedIn = Boolean(sheets.signedIn) || Boolean(sheets.user) || Boolean(sheets.accessToken);
+
     return {
-        githubConnected: Boolean(github.token),
+        githubConnected,
         githubUser: github.user,
         githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
         githubAutoPush: github.autoPush,
@@ -157,21 +210,27 @@ async function readToolkitStatusLocally() {
 }
 
 async function refreshToolkitStatus() {
+    // Always hydrate local session first so Settings shows names after restart
+    const localStatus = await readToolkitStatusLocally();
     try {
         const status = await sendMessage({ type: "GET_SYNC_STATUS" });
-        applyToolkitStatus(status);
-        if (status.githubConnected) {
-            await loadRepos(status.githubRepo);
+        applyToolkitStatus({
+            ...status,
+            googleUser: status.googleUser || localStatus.googleUser,
+            githubUser: status.githubUser || localStatus.githubUser,
+            sheetsConnected: status.sheetsConnected || localStatus.sheetsConnected,
+            githubConnected: status.githubConnected || localStatus.githubConnected
+        });
+        if (status.githubConnected || localStatus.githubConnected) {
+            await loadRepos(status.githubRepo || localStatus.githubRepo);
         }
     } catch (_err) {
-        // Service worker may be down — still show login state from storage
-        const status = await readToolkitStatusLocally();
-        applyToolkitStatus(status);
-        if (status.githubConnected) {
+        applyToolkitStatus(localStatus);
+        if (localStatus.githubConnected) {
             try {
-                await loadRepos(status.githubRepo);
+                await loadRepos(localStatus.githubRepo);
             } catch (_repoErr) {
-                // ignore until logged in / SW healthy
+                // ignore
             }
         }
     }

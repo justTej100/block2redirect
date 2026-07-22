@@ -337,7 +337,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     new Promise((resolve) => getCodeforcesState(resolve)),
                     new Promise((resolve) => getFollowUpState(resolve))
                 ]);
-                let googleSignedIn = Boolean(sheets.accessToken);
+                let googleSignedIn = Boolean(sheets.accessToken) || Boolean(sheets.signedIn) || Boolean(sheets.user);
                 try {
                     await new Promise((resolve, reject) => {
                         chrome.identity.getAuthToken({ interactive: false }, (token) => {

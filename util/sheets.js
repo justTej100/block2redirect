@@ -73,12 +73,43 @@ async function connectGoogle() {
     } catch (_err) {
         user = { name: "", email: "", picture: "", id: "" };
     }
+    // Persist forever in chrome.storage.local until explicit Logout.
+    // Chrome also keeps the OAuth grant and silently refreshes via getAuthToken.
     await new Promise((resolve) => setSheetsConfig({
         accessToken,
-        tokenExpiry: Date.now() + 55 * 60 * 1000,
-        user
+        tokenExpiry: 0,
+        user,
+        signedIn: true
     }, resolve));
     return { accessToken, user };
+}
+
+/**
+ * Restore Google session without prompting. Returns null if not signed in.
+ * Keeps profile + token cached in local storage for Settings display.
+ */
+async function ensureGoogleSession() {
+    try {
+        const accessToken = await getAuthToken(false);
+        const config = await new Promise((resolve) => getSheetsConfig(resolve));
+        let user = config.user;
+        if (!user?.name && !user?.email) {
+            try {
+                user = await fetchGoogleUserProfile(accessToken);
+            } catch (_err) {
+                user = user || { name: "", email: "", picture: "", id: "" };
+            }
+        }
+        await new Promise((resolve) => setSheetsConfig({
+            accessToken,
+            tokenExpiry: 0,
+            user,
+            signedIn: true
+        }, resolve));
+        return { accessToken, user, signedIn: true };
+    } catch (_err) {
+        return { accessToken: "", user: null, signedIn: false };
+    }
 }
 
 async function disconnectGoogle() {
@@ -100,10 +131,15 @@ async function disconnectGoogle() {
 }
 
 async function getValidGoogleToken() {
-    // Never use interactive:true from the service worker — the consent UI often never opens.
-    // Interactive login must happen on the settings page.
+    // Chrome refreshes cached tokens silently — no interactive re-login until Logout / revoke.
     try {
-        return await getAuthToken(false);
+        const token = await getAuthToken(false);
+        await new Promise((resolve) => setSheetsConfig({
+            accessToken: token,
+            tokenExpiry: 0,
+            signedIn: true
+        }, resolve));
+        return token;
     } catch (_err) {
         throw new Error("Not signed in with Google — open Settings and click Login with Google");
     }
