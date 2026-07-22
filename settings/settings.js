@@ -47,6 +47,7 @@ const cfHandleInput = document.getElementById("cfHandleInput");
 const cfHandleSaveBtn = document.getElementById("cfHandleSaveBtn");
 
 const sheetsStatus = document.getElementById("sheetsStatus");
+const googleExtIdHint = document.getElementById("googleExtIdHint");
 const googleConnectBtn = document.getElementById("googleConnectBtn");
 const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
 const sheetUrlInput = document.getElementById("sheetUrlInput");
@@ -54,20 +55,113 @@ const sheetLinkBtn = document.getElementById("sheetLinkBtn");
 const jobGoalInput = document.getElementById("jobGoalInput");
 const jobGoalSaveBtn = document.getElementById("jobGoalSaveBtn");
 
+if (googleExtIdHint) {
+    googleExtIdHint.textContent = `Extension ID (paste into Google Cloud OAuth client): ${chrome.runtime.id}`;
+}
+
 function sendMessage(message) {
     return new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage(message, (response) => {
-            if (chrome.runtime.lastError) {
-                reject(new Error(chrome.runtime.lastError.message));
-                return;
-            }
-            if (!response?.ok) {
-                reject(new Error(response?.error || "Request failed"));
-                return;
-            }
-            resolve(response.result);
-        });
+        try {
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                    return;
+                }
+                if (!response?.ok) {
+                    reject(new Error(response?.error || "Request failed"));
+                    return;
+                }
+                resolve(response.result);
+            });
+        } catch (err) {
+            reject(err);
+        }
     });
+}
+
+function applyToolkitStatus(status) {
+    if (status.githubConnected) {
+        githubStatus.textContent = `Logged in as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
+        githubStatus.dataset.kind = "success";
+    } else if (!status.githubLoginReady) {
+        githubStatus.textContent = "Login unavailable — set GITHUB_OAUTH_CLIENT_ID in util/constants.js";
+        githubStatus.dataset.kind = "info";
+    } else {
+        githubStatus.textContent = "Not logged in";
+        githubStatus.dataset.kind = "info";
+    }
+    githubAutoPushToggle.checked = status.githubAutoPush !== false;
+    cfHandleInput.value = status.cfHandle || "";
+
+    if (status.sheetsConnected || status.spreadsheetId) {
+        sheetsStatus.textContent = status.spreadsheetUrl
+            ? `Sheet linked: ${status.spreadsheetUrl}`
+            : (status.sheetsConnected ? "Logged in — paste a Sheet URL" : "Not logged in");
+        sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
+    } else if (!status.googleLoginReady) {
+        sheetsStatus.textContent = "Login unavailable — add oauth2.client_id in manifest.json";
+        sheetsStatus.dataset.kind = "info";
+    } else {
+        sheetsStatus.textContent = "Not logged in — click Login with Google";
+        sheetsStatus.dataset.kind = "info";
+    }
+    if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
+    jobGoalInput.value = status.jobAppGoal || 5;
+}
+
+async function readToolkitStatusLocally() {
+    const github = await new Promise((resolve) => getGitHubConfig(resolve));
+    const sheets = await new Promise((resolve) => getSheetsConfig(resolve));
+    const cf = await new Promise((resolve) => getCodeforcesState(resolve));
+    let googleSignedIn = Boolean(sheets.accessToken);
+    try {
+        await new Promise((resolve, reject) => {
+            chrome.identity.getAuthToken({ interactive: false }, (token) => {
+                if (chrome.runtime.lastError || !token) {
+                    reject(new Error("no token"));
+                    return;
+                }
+                googleSignedIn = true;
+                resolve(token);
+            });
+        });
+    } catch (_err) {
+        // not signed in
+    }
+    return {
+        githubConnected: Boolean(github.token),
+        githubUser: github.user,
+        githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
+        githubAutoPush: github.autoPush,
+        githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
+        sheetsConnected: googleSignedIn,
+        spreadsheetId: sheets.spreadsheetId,
+        spreadsheetUrl: sheets.spreadsheetUrl,
+        googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),
+        jobAppGoal: sheets.jobAppGoal,
+        cfHandle: cf.handle
+    };
+}
+
+async function refreshToolkitStatus() {
+    try {
+        const status = await sendMessage({ type: "GET_SYNC_STATUS" });
+        applyToolkitStatus(status);
+        if (status.githubConnected) {
+            await loadRepos(status.githubRepo);
+        }
+    } catch (_err) {
+        // Service worker may be down — still show login state from storage
+        const status = await readToolkitStatusLocally();
+        applyToolkitStatus(status);
+        if (status.githubConnected) {
+            try {
+                await loadRepos(status.githubRepo);
+            } catch (_repoErr) {
+                // ignore until logged in / SW healthy
+            }
+        }
+    }
 }
 
 function loadStats() {
@@ -211,49 +305,14 @@ function renderState() {
     });
 }
 
-async function refreshToolkitStatus() {
-    try {
-        const status = await sendMessage({ type: "GET_SYNC_STATUS" });
-        if (status.githubConnected) {
-            githubStatus.textContent = `Logged in as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
-            githubStatus.dataset.kind = "success";
-        } else if (!status.githubLoginReady) {
-            githubStatus.textContent = "Login unavailable — set GITHUB_OAUTH_CLIENT_ID in util/constants.js";
-            githubStatus.dataset.kind = "info";
-        } else {
-            githubStatus.textContent = "Not logged in";
-            githubStatus.dataset.kind = "info";
-        }
-        githubAutoPushToggle.checked = status.githubAutoPush !== false;
-        cfHandleInput.value = status.cfHandle || "";
-
-        if (status.sheetsConnected || status.spreadsheetId) {
-            sheetsStatus.textContent = status.spreadsheetUrl
-                ? `Sheet linked: ${status.spreadsheetUrl}`
-                : (status.sheetsConnected ? "Logged in — paste a Sheet URL" : "Not logged in");
-            sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
-        } else if (!status.googleLoginReady) {
-            sheetsStatus.textContent = "Login unavailable — add oauth2.client_id in manifest.json";
-            sheetsStatus.dataset.kind = "info";
-        } else {
-            sheetsStatus.textContent = "Not logged in — click Login with Google";
-            sheetsStatus.dataset.kind = "info";
-        }
-        if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
-        jobGoalInput.value = status.jobAppGoal || 5;
-
-        if (status.githubConnected) {
-            await loadRepos(status.githubRepo);
-        }
-    } catch (err) {
-        githubStatus.textContent = err.message;
-        githubStatus.dataset.kind = "error";
-    }
-}
-
 async function loadRepos(selectedFull) {
     try {
-        const repos = await sendMessage({ type: "GITHUB_LIST_REPOS" });
+        let repos;
+        try {
+            repos = await sendMessage({ type: "GITHUB_LIST_REPOS" });
+        } catch (_swErr) {
+            repos = await listGitHubRepos();
+        }
         githubRepoSelect.innerHTML = "<option value=\"\">Select a repository</option>";
         (repos || []).forEach((repo) => {
             const option = document.createElement("option");
@@ -384,22 +443,30 @@ async function connectGitHub() {
         githubConnectBtn.disabled = true;
         githubDeviceHint.hidden = false;
         githubDeviceHint.dataset.kind = "info";
-        githubDeviceHint.textContent = "Opening GitHub login...";
-        const codes = await sendMessage({ type: "GITHUB_START_DEVICE_CODES" });
-        githubDeviceHint.innerHTML = `Enter code <b>${codes.userCode}</b> on the GitHub tab, then return here — waiting...`;
+        githubDeviceHint.textContent = "Starting GitHub device login...";
 
-        const intervalMs = Math.max(5, Number(codes.interval) || 5) * 1000;
+        // Run entirely in this page so a dead service worker cannot block login
+        const device = await startGitHubDeviceFlow();
+        const userCode = device.user_code;
+        const loginUrl = device.verification_uri_complete
+            || `${device.verification_uri || "https://github.com/login/device"}?user_code=${encodeURIComponent(userCode)}`;
+
+        await chrome.tabs.create({ url: loginUrl });
+        githubDeviceHint.innerHTML = `Code <b>${userCode}</b> — confirm on the GitHub tab, then return here. Waiting...`;
+
+        const intervalMs = Math.max(5, Number(device.interval) || 5) * 1000;
         const deadline = Date.now() + 14 * 60 * 1000;
         while (Date.now() < deadline) {
             await new Promise((r) => setTimeout(r, intervalMs));
-            const poll = await sendMessage({ type: "GITHUB_POLL_DEVICE_ONCE" });
+            const poll = await pollGitHubDeviceTokenOnce(device.device_code);
             if (poll.status === "pending") continue;
             if (poll.status === "slow_down") {
                 await new Promise((r) => setTimeout(r, 5000));
                 continue;
             }
             if (poll.status === "ok") {
-                githubDeviceHint.textContent = `Logged in as ${poll.user?.login || "user"}`;
+                const result = await saveGitHubToken(poll.token);
+                githubDeviceHint.textContent = `Logged in as ${result.user?.login || "user"}`;
                 githubDeviceHint.dataset.kind = "success";
                 await refreshToolkitStatus();
                 return;
@@ -432,12 +499,16 @@ timerToggle.onchange = () => chrome.storage.sync.set({ timerMode: timerToggle.ch
 
 githubConnectBtn.onclick = connectGitHub;
 githubDisconnectBtn.onclick = async () => {
-    await sendMessage({ type: "GITHUB_DISCONNECT" });
+    try {
+        await sendMessage({ type: "GITHUB_DISCONNECT" });
+    } catch (_err) {
+        await new Promise((resolve) => clearGitHubAuth(resolve));
+    }
     await refreshToolkitStatus();
 };
 githubPatSaveBtn.onclick = async () => {
     try {
-        const result = await sendMessage({ type: "GITHUB_SET_PAT", token: githubPatInput.value });
+        const result = await saveGitHubToken((githubPatInput.value || "").trim());
         githubPatInput.value = "";
         githubStatus.textContent = `Logged in as ${result.user?.login || "user"} (PAT)`;
         githubStatus.dataset.kind = "success";
@@ -453,14 +524,27 @@ githubRepoSelect.onchange = async () => {
     const value = githubRepoSelect.value;
     if (!value) return;
     const [owner, repo] = value.split("/");
-    await sendMessage({ type: "GITHUB_SET_REPO", owner, repo });
+    try {
+        await sendMessage({ type: "GITHUB_SET_REPO", owner, repo });
+    } catch (_err) {
+        await new Promise((resolve) => setGitHubConfig({ owner, repo }, resolve));
+    }
     await refreshToolkitStatus();
 };
 githubCreateRepoBtn.onclick = async () => {
     const name = (githubNewRepoInput.value || "").trim();
     if (!name) return;
     try {
-        await sendMessage({ type: "GITHUB_CREATE_REPO", name, private: false });
+        let repo;
+        try {
+            repo = await sendMessage({ type: "GITHUB_CREATE_REPO", name, private: false });
+        } catch (_swErr) {
+            repo = await createGitHubRepo(name, false);
+            await new Promise((resolve) => setGitHubConfig({
+                owner: repo.owner.login,
+                repo: repo.name
+            }, resolve));
+        }
         githubNewRepoInput.value = "";
         await refreshToolkitStatus();
     } catch (err) {
@@ -469,7 +553,13 @@ githubCreateRepoBtn.onclick = async () => {
     }
 };
 githubAutoPushToggle.onchange = async () => {
-    await sendMessage({ type: "GITHUB_SET_AUTO", autoPush: githubAutoPushToggle.checked });
+    try {
+        await sendMessage({ type: "GITHUB_SET_AUTO", autoPush: githubAutoPushToggle.checked });
+    } catch (_err) {
+        await new Promise((resolve) => setGitHubConfig({
+            autoPush: githubAutoPushToggle.checked
+        }, resolve));
+    }
 };
 cfHandleSaveBtn.onclick = async () => {
     await sendMessage({ type: "SET_CF_HANDLE", handle: (cfHandleInput.value || "").trim() });
@@ -482,7 +572,8 @@ googleConnectBtn.onclick = async () => {
         googleConnectBtn.disabled = true;
         sheetsStatus.textContent = "Opening Google login...";
         sheetsStatus.dataset.kind = "info";
-        await sendMessage({ type: "GOOGLE_CONNECT" });
+        // Must run in this page — interactive getAuthToken from the service worker often shows no UI
+        await connectGoogle();
         sheetsStatus.textContent = "Logged in with Google";
         sheetsStatus.dataset.kind = "success";
         await refreshToolkitStatus();
@@ -494,12 +585,22 @@ googleConnectBtn.onclick = async () => {
     }
 };
 googleDisconnectBtn.onclick = async () => {
-    await sendMessage({ type: "GOOGLE_DISCONNECT" });
-    await refreshToolkitStatus();
+    try {
+        await disconnectGoogle();
+        await refreshToolkitStatus();
+    } catch (err) {
+        sheetsStatus.textContent = err.message;
+        sheetsStatus.dataset.kind = "error";
+    }
 };
 sheetLinkBtn.onclick = async () => {
     try {
-        const result = await sendMessage({ type: "SHEETS_LINK", urlOrId: sheetUrlInput.value });
+        let result;
+        try {
+            result = await sendMessage({ type: "SHEETS_LINK", urlOrId: sheetUrlInput.value });
+        } catch (_swErr) {
+            result = await linkSpreadsheet(sheetUrlInput.value);
+        }
         sheetsStatus.textContent = `Linked: ${result.title || result.spreadsheetId}`;
         sheetsStatus.dataset.kind = "success";
         await refreshToolkitStatus();
@@ -509,7 +610,13 @@ sheetLinkBtn.onclick = async () => {
     }
 };
 jobGoalSaveBtn.onclick = async () => {
-    await sendMessage({ type: "SET_JOB_GOAL", goal: Number(jobGoalInput.value) || 5 });
+    try {
+        await sendMessage({ type: "SET_JOB_GOAL", goal: Number(jobGoalInput.value) || 5 });
+    } catch (_err) {
+        await new Promise((resolve) => setSheetsConfig({
+            jobAppGoal: Math.max(1, Number(jobGoalInput.value) || 5)
+        }, resolve));
+    }
     sheetsStatus.textContent = "Daily application goal saved.";
     sheetsStatus.dataset.kind = "success";
 };

@@ -19,7 +19,9 @@ function getAuthToken(interactive) {
     return new Promise((resolve, reject) => {
         chrome.identity.getAuthToken({ interactive: Boolean(interactive) }, (token) => {
             if (chrome.runtime.lastError || !token) {
-                reject(new Error(chrome.runtime.lastError?.message || "Google login failed"));
+                reject(new Error(explainGoogleAuthError(
+                    chrome.runtime.lastError?.message || "Google login failed"
+                )));
                 return;
             }
             resolve(token);
@@ -27,11 +29,21 @@ function getAuthToken(interactive) {
     });
 }
 
+function explainGoogleAuthError(rawMessage) {
+    const msg = String(rawMessage || "Google login failed");
+    const extensionId = chrome.runtime.id;
+    if (/status code[: ]*2|bad client|invalid_client|OAuth2 request failed/i.test(msg)) {
+        return `${msg} — In Google Cloud, set the Chrome Extension OAuth client Application ID to: ${extensionId}`;
+    }
+    return `${msg} (extension ID: ${extensionId})`;
+}
+
 async function connectGoogle() {
     const manifest = chrome.runtime.getManifest();
     if (!manifest.oauth2?.client_id) {
         throw new Error("Add oauth2.client_id to manifest.json (Google Chrome Extension OAuth client)");
     }
+    // Prefer being called from an extension page (settings). SW interactive auth is unreliable.
     const accessToken = await getAuthToken(true);
     await new Promise((resolve) => setSheetsConfig({
         accessToken,
@@ -59,10 +71,12 @@ async function disconnectGoogle() {
 }
 
 async function getValidGoogleToken() {
+    // Never use interactive:true from the service worker — the consent UI often never opens.
+    // Interactive login must happen on the settings page.
     try {
         return await getAuthToken(false);
     } catch (_err) {
-        return getAuthToken(true);
+        throw new Error("Not signed in with Google — open Settings and click Login with Google");
     }
 }
 

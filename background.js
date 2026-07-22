@@ -4,14 +4,33 @@
  * Core enforcement engine + toolkit message router (GitHub sync, job tracker).
  */
 
-importScripts(
-    "util/constants.js",
-    "util/helpers.js",
-    "util/storage.js",
-    "util/validation.js",
-    "util/github.js",
-    "util/sheets.js"
-);
+try {
+    importScripts(
+        "util/constants.js",
+        "util/helpers.js",
+        "util/storage.js",
+        "util/validation.js",
+        "util/github.js",
+        "util/sheets.js"
+    );
+} catch (err) {
+    // Surface import failures in the extension error page
+    console.error("[Block2Redirect] importScripts failed:", err);
+    throw err;
+}
+
+function ensureAlarms() {
+    try {
+        chrome.alarms.create("codeforces-poll", { periodInMinutes: 5 });
+        chrome.alarms.create("followup-check", { periodInMinutes: 60 });
+    } catch (err) {
+        console.error("[Block2Redirect] alarms setup failed:", err);
+    }
+}
+
+chrome.runtime.onInstalled.addListener(ensureAlarms);
+chrome.runtime.onStartup.addListener(ensureAlarms);
+ensureAlarms();
 
 function trackBlock(site) {
     chrome.storage.local.get(["stats"], (data) => {
@@ -274,9 +293,6 @@ async function checkFollowUpReminders() {
     });
 }
 
-chrome.alarms.create("codeforces-poll", { periodInMinutes: 5 });
-chrome.alarms.create("followup-check", { periodInMinutes: 60 });
-
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "codeforces-poll") {
         pollCodeforces().catch(() => {});
@@ -361,15 +377,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case "GITHUB_START_DEVICE_CODES":
             return reply((async () => {
                 const device = await startGitHubDeviceFlow();
-                await new Promise((resolve) => setSession({
+                // Use local (not session) — SW restarts wipe session between poll messages
+                await new Promise((resolve) => setLocal({
                     githubDeviceCode: device.device_code,
-                    githubDeviceInterval: device.interval,
+                    githubDeviceInterval: device.interval || 5,
                     githubDeviceExpires: Date.now() + (Number(device.expires_in) || 900) * 1000
                 }, resolve));
-                const verificationUri = device.verification_uri || "https://github.com/login/device";
-                chrome.tabs.create({ url: verificationUri });
+                const userCode = device.user_code;
+                const verificationUri = device.verification_uri_complete
+                    || `${device.verification_uri || "https://github.com/login/device"}?user_code=${encodeURIComponent(userCode)}`;
                 return {
-                    userCode: device.user_code,
+                    userCode,
                     verificationUri,
                     interval: device.interval || 5
                 };
@@ -377,7 +395,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         case "GITHUB_POLL_DEVICE_ONCE":
             return reply((async () => {
-                const sess = await new Promise((resolve) => getSession([
+                const sess = await new Promise((resolve) => getLocal([
                     "githubDeviceCode",
                     "githubDeviceExpires"
                 ], resolve));
@@ -390,7 +408,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     return poll;
                 }
                 const result = await saveGitHubToken(poll.token);
-                await new Promise((resolve) => setSession({
+                await new Promise((resolve) => setLocal({
                     githubDeviceCode: null,
                     githubDeviceInterval: null,
                     githubDeviceExpires: null
