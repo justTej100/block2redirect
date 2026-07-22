@@ -1,11 +1,9 @@
 /**
  * GOOGLE OAUTH + SHEETS APPEND
  *
- * Uses chrome.identity.launchWebAuthFlow. Tokens in chrome.storage.local only.
+ * Uses chrome.identity.getAuthToken (Client ID lives in manifest.json → oauth2).
  */
 
-const GOOGLE_AUTH_BASE = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN_INFO = "https://www.googleapis.com/oauth2/v1/tokeninfo";
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 function extractSpreadsheetId(urlOrId) {
@@ -17,60 +15,55 @@ function extractSpreadsheetId(urlOrId) {
     return "";
 }
 
-async function getGoogleClientId() {
-    const config = await new Promise((resolve) => getSheetsConfig(resolve));
-    if (!config.clientId) {
-        throw new Error("Add your Google OAuth client ID in Settings → Job Tracker");
-    }
-    return config.clientId;
+function getAuthToken(interactive) {
+    return new Promise((resolve, reject) => {
+        chrome.identity.getAuthToken({ interactive: Boolean(interactive) }, (token) => {
+            if (chrome.runtime.lastError || !token) {
+                reject(new Error(chrome.runtime.lastError?.message || "Google login failed"));
+                return;
+            }
+            resolve(token);
+        });
+    });
 }
 
 async function connectGoogle() {
-    const clientId = await getGoogleClientId();
-    const redirectUri = chrome.identity.getRedirectURL();
-    const params = new URLSearchParams({
-        client_id: clientId,
-        response_type: "token",
-        redirect_uri: redirectUri,
-        scope: GOOGLE_SHEETS_SCOPES,
-        prompt: "consent"
-    });
-    const authUrl = `${GOOGLE_AUTH_BASE}?${params.toString()}`;
-
-    const redirected = await new Promise((resolve, reject) => {
-        chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (responseUrl) => {
-            if (chrome.runtime.lastError || !responseUrl) {
-                reject(new Error(chrome.runtime.lastError?.message || "Google auth cancelled"));
-                return;
-            }
-            resolve(responseUrl);
-        });
-    });
-
-    const hash = new URL(redirected).hash.replace(/^#/, "");
-    const result = new URLSearchParams(hash);
-    const accessToken = result.get("access_token");
-    const expiresIn = Number(result.get("expires_in") || 3600);
-    if (!accessToken) {
-        throw new Error("No access token returned from Google");
+    const manifest = chrome.runtime.getManifest();
+    if (!manifest.oauth2?.client_id) {
+        throw new Error("Add oauth2.client_id to manifest.json (Google Chrome Extension OAuth client)");
     }
-
+    const accessToken = await getAuthToken(true);
     await new Promise((resolve) => setSheetsConfig({
         accessToken,
-        tokenExpiry: Date.now() + expiresIn * 1000
+        tokenExpiry: Date.now() + 55 * 60 * 1000
     }, resolve));
-
     return { accessToken };
 }
 
-async function getValidGoogleToken() {
-    const config = await new Promise((resolve) => getSheetsConfig(resolve));
-    if (config.accessToken && config.tokenExpiry > Date.now() + 60_000) {
-        return config.accessToken;
+async function disconnectGoogle() {
+    try {
+        const token = await getAuthToken(false);
+        await new Promise((resolve) => {
+            chrome.identity.removeCachedAuthToken({ token }, () => {
+                if (chrome.identity.clearAllCachedAuthTokens) {
+                    chrome.identity.clearAllCachedAuthTokens(() => resolve());
+                } else {
+                    resolve();
+                }
+            });
+        });
+    } catch (_err) {
+        // already signed out
     }
-    // Token expired — re-auth interactively
-    const { accessToken } = await connectGoogle();
-    return accessToken;
+    await new Promise((resolve) => clearGoogleAuth(resolve));
+}
+
+async function getValidGoogleToken() {
+    try {
+        return await getAuthToken(false);
+    } catch (_err) {
+        return getAuthToken(true);
+    }
 }
 
 async function sheetsFetch(path, options = {}) {
@@ -85,6 +78,16 @@ async function sheetsFetch(path, options = {}) {
     });
     if (!res.ok) {
         const text = await res.text();
+        // Invalidate bad cached token once
+        if (res.status === 401) {
+            try {
+                await new Promise((resolve) => {
+                    chrome.identity.removeCachedAuthToken({ token }, () => resolve());
+                });
+            } catch (_e) {
+                // ignore
+            }
+        }
         throw new Error(`Sheets API ${res.status}: ${text.slice(0, 200)}`);
     }
     return res.json();
@@ -151,7 +154,6 @@ async function appendApplication(row) {
         }
     );
 
-    // Track URL for duplicate detection
     if (row.link) {
         const urls = config.loggedJobUrls || [];
         if (!urls.includes(row.link)) {
@@ -161,7 +163,6 @@ async function appendApplication(row) {
         }
     }
 
-    // Follow-up reminder entry
     const followUps = await new Promise((resolve) => getFollowUpState(resolve));
     followUps.push({
         company: row.company || "",
@@ -175,7 +176,6 @@ async function appendApplication(row) {
     return { ok: true };
 }
 
-/** Check if job URL or company+role already logged */
 async function isDuplicateJob(link, company, role) {
     const config = await new Promise((resolve) => getSheetsConfig(resolve));
     if (link && (config.loggedJobUrls || []).includes(link)) {

@@ -34,10 +34,10 @@ const statsList = document.getElementById("statsList");
 
 const githubStatus = document.getElementById("githubStatus");
 const githubDeviceHint = document.getElementById("githubDeviceHint");
-const githubClientIdInput = document.getElementById("githubClientIdInput");
-const githubClientIdSaveBtn = document.getElementById("githubClientIdSaveBtn");
 const githubConnectBtn = document.getElementById("githubConnectBtn");
 const githubDisconnectBtn = document.getElementById("githubDisconnectBtn");
+const githubPatInput = document.getElementById("githubPatInput");
+const githubPatSaveBtn = document.getElementById("githubPatSaveBtn");
 const githubRepoSelect = document.getElementById("githubRepoSelect");
 const githubRefreshReposBtn = document.getElementById("githubRefreshReposBtn");
 const githubNewRepoInput = document.getElementById("githubNewRepoInput");
@@ -47,8 +47,6 @@ const cfHandleInput = document.getElementById("cfHandleInput");
 const cfHandleSaveBtn = document.getElementById("cfHandleSaveBtn");
 
 const sheetsStatus = document.getElementById("sheetsStatus");
-const googleClientIdInput = document.getElementById("googleClientIdInput");
-const googleClientIdSaveBtn = document.getElementById("googleClientIdSaveBtn");
 const googleConnectBtn = document.getElementById("googleConnectBtn");
 const googleDisconnectBtn = document.getElementById("googleDisconnectBtn");
 const sheetUrlInput = document.getElementById("sheetUrlInput");
@@ -216,17 +214,14 @@ function renderState() {
 async function refreshToolkitStatus() {
     try {
         const status = await sendMessage({ type: "GET_SYNC_STATUS" });
-        githubClientIdInput.value = status.githubClientId || "";
-        googleClientIdInput.value = status.googleClientId || "";
-
         if (status.githubConnected) {
-            githubStatus.textContent = `Connected as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
+            githubStatus.textContent = `Logged in as ${status.githubUser?.login || "user"}${status.githubRepo ? ` · ${status.githubRepo}` : ""}`;
             githubStatus.dataset.kind = "success";
-        } else if (!status.githubClientId) {
-            githubStatus.textContent = "Paste your GitHub OAuth App client ID, then Connect";
+        } else if (!status.githubLoginReady) {
+            githubStatus.textContent = "Login unavailable — set GITHUB_OAUTH_CLIENT_ID in util/constants.js";
             githubStatus.dataset.kind = "info";
         } else {
-            githubStatus.textContent = "Client ID saved — click Connect GitHub";
+            githubStatus.textContent = "Not logged in";
             githubStatus.dataset.kind = "info";
         }
         githubAutoPushToggle.checked = status.githubAutoPush !== false;
@@ -235,13 +230,13 @@ async function refreshToolkitStatus() {
         if (status.sheetsConnected || status.spreadsheetId) {
             sheetsStatus.textContent = status.spreadsheetUrl
                 ? `Sheet linked: ${status.spreadsheetUrl}`
-                : (status.sheetsConnected ? "Google connected — paste a Sheet URL" : "Not connected");
+                : (status.sheetsConnected ? "Logged in — paste a Sheet URL" : "Not logged in");
             sheetsStatus.dataset.kind = status.spreadsheetId ? "success" : "info";
-        } else if (!status.googleClientId) {
-            sheetsStatus.textContent = "Paste your Google OAuth client ID, then Connect";
+        } else if (!status.googleLoginReady) {
+            sheetsStatus.textContent = "Login unavailable — add oauth2.client_id in manifest.json";
             sheetsStatus.dataset.kind = "info";
         } else {
-            sheetsStatus.textContent = "Client ID saved — click Connect Google";
+            sheetsStatus.textContent = "Not logged in — click Login with Google";
             sheetsStatus.dataset.kind = "info";
         }
         if (status.spreadsheetUrl) sheetUrlInput.value = status.spreadsheetUrl;
@@ -386,18 +381,39 @@ function stopSession() {
 
 async function connectGitHub() {
     try {
+        githubConnectBtn.disabled = true;
         githubDeviceHint.hidden = false;
-        githubDeviceHint.textContent = "Starting device login...";
+        githubDeviceHint.dataset.kind = "info";
+        githubDeviceHint.textContent = "Opening GitHub login...";
         const codes = await sendMessage({ type: "GITHUB_START_DEVICE_CODES" });
-        githubDeviceHint.innerHTML = `Enter code <b>${codes.userCode}</b> at <a href="${codes.verificationUri}" target="_blank" rel="noopener">${codes.verificationUri}</a>, then wait...`;
-        const result = await sendMessage({ type: "GITHUB_POLL_DEVICE" });
-        githubDeviceHint.textContent = `Connected as ${result.user?.login || "user"}`;
-        githubDeviceHint.dataset.kind = "success";
-        await refreshToolkitStatus();
+        githubDeviceHint.innerHTML = `Enter code <b>${codes.userCode}</b> on the GitHub tab, then return here — waiting...`;
+
+        const intervalMs = Math.max(5, Number(codes.interval) || 5) * 1000;
+        const deadline = Date.now() + 14 * 60 * 1000;
+        while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, intervalMs));
+            const poll = await sendMessage({ type: "GITHUB_POLL_DEVICE_ONCE" });
+            if (poll.status === "pending") continue;
+            if (poll.status === "slow_down") {
+                await new Promise((r) => setTimeout(r, 5000));
+                continue;
+            }
+            if (poll.status === "ok") {
+                githubDeviceHint.textContent = `Logged in as ${poll.user?.login || "user"}`;
+                githubDeviceHint.dataset.kind = "success";
+                await refreshToolkitStatus();
+                return;
+            }
+        }
+        throw new Error("Timed out waiting for GitHub login");
     } catch (err) {
         githubDeviceHint.hidden = false;
         githubDeviceHint.dataset.kind = "error";
         githubDeviceHint.textContent = err.message;
+        githubStatus.textContent = err.message;
+        githubStatus.dataset.kind = "error";
+    } finally {
+        githubConnectBtn.disabled = false;
     }
 }
 
@@ -414,21 +430,23 @@ randomToggle.onchange = () => chrome.storage.sync.set({ randomMode: randomToggle
 punishToggle.onchange = () => chrome.storage.sync.set({ punishmentMode: punishToggle.checked });
 timerToggle.onchange = () => chrome.storage.sync.set({ timerMode: timerToggle.checked });
 
-githubClientIdSaveBtn.onclick = async () => {
-    await sendMessage({ type: "SET_GITHUB_CLIENT_ID", clientId: githubClientIdInput.value });
-    githubStatus.textContent = "GitHub client ID saved.";
-    githubStatus.dataset.kind = "success";
-};
-googleClientIdSaveBtn.onclick = async () => {
-    await sendMessage({ type: "SET_GOOGLE_CLIENT_ID", clientId: googleClientIdInput.value });
-    sheetsStatus.textContent = "Google client ID saved.";
-    sheetsStatus.dataset.kind = "success";
-};
-
 githubConnectBtn.onclick = connectGitHub;
 githubDisconnectBtn.onclick = async () => {
     await sendMessage({ type: "GITHUB_DISCONNECT" });
     await refreshToolkitStatus();
+};
+githubPatSaveBtn.onclick = async () => {
+    try {
+        const result = await sendMessage({ type: "GITHUB_SET_PAT", token: githubPatInput.value });
+        githubPatInput.value = "";
+        githubStatus.textContent = `Logged in as ${result.user?.login || "user"} (PAT)`;
+        githubStatus.dataset.kind = "success";
+        githubDeviceHint.hidden = true;
+        await refreshToolkitStatus();
+    } catch (err) {
+        githubStatus.textContent = err.message;
+        githubStatus.dataset.kind = "error";
+    }
 };
 githubRefreshReposBtn.onclick = () => refreshToolkitStatus();
 githubRepoSelect.onchange = async () => {
@@ -461,11 +479,18 @@ cfHandleSaveBtn.onclick = async () => {
 
 googleConnectBtn.onclick = async () => {
     try {
+        googleConnectBtn.disabled = true;
+        sheetsStatus.textContent = "Opening Google login...";
+        sheetsStatus.dataset.kind = "info";
         await sendMessage({ type: "GOOGLE_CONNECT" });
+        sheetsStatus.textContent = "Logged in with Google";
+        sheetsStatus.dataset.kind = "success";
         await refreshToolkitStatus();
     } catch (err) {
         sheetsStatus.textContent = err.message;
         sheetsStatus.dataset.kind = "error";
+    } finally {
+        googleConnectBtn.disabled = false;
     }
 };
 googleDisconnectBtn.onclick = async () => {

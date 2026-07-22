@@ -11,16 +11,15 @@ const GITHUB_API = "https://api.github.com";
 /**
  * Start GitHub Device Flow. Returns { user_code, verification_uri, device_code, interval, expires_in }.
  */
-async function getGitHubClientId() {
-    const config = await new Promise((resolve) => getGitHubConfig(resolve));
-    if (!config.clientId) {
-        throw new Error("Add your GitHub OAuth App client ID in Settings → GitHub Solve Sync");
+function requireGitHubClientId() {
+    if (!GITHUB_OAUTH_CLIENT_ID) {
+        throw new Error("GitHub login is not configured (missing GITHUB_OAUTH_CLIENT_ID in util/constants.js)");
     }
-    return config.clientId;
+    return GITHUB_OAUTH_CLIENT_ID;
 }
 
 async function startGitHubDeviceFlow() {
-    const clientId = await getGitHubClientId();
+    const clientId = requireGitHubClientId();
     const body = new URLSearchParams({
         client_id: clientId,
         scope: "repo"
@@ -33,52 +32,57 @@ async function startGitHubDeviceFlow() {
         },
         body
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-        throw new Error(`GitHub device code failed (${res.status})`);
+        throw new Error(
+            data.error_description ||
+            data.error ||
+            `GitHub device code failed (${res.status}). Enable Device Flow on your GitHub OAuth App.`
+        );
     }
-    return res.json();
+    if (data.error) {
+        throw new Error(data.error_description || data.error);
+    }
+    return data;
 }
 
 /**
- * Poll until the user completes Device Flow authorization.
+ * One poll attempt — settings page loops this so the service worker is not blocked for minutes.
+ * @returns {{ status: 'ok', token: string } | { status: 'pending' } | { status: 'slow_down' }}
  */
-async function pollGitHubDeviceToken(deviceCode, intervalSec = 5, expiresIn = 900) {
-    const clientId = await getGitHubClientId();
-    const started = Date.now();
-    let interval = Math.max(5, Number(intervalSec) || 5) * 1000;
-
-    while (Date.now() - started < expiresIn * 1000) {
-        await new Promise((r) => setTimeout(r, interval));
-        const body = new URLSearchParams({
-            client_id: clientId,
-            device_code: deviceCode,
-            grant_type: "urn:ietf:params:oauth:grant-type:device_code"
-        });
-        const res = await fetch(GITHUB_ACCESS_TOKEN_URL, {
-            method: "POST",
-            headers: {
-                Accept: "application/json",
-                "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body
-        });
-        const data = await res.json();
-        if (data.access_token) {
-            return data.access_token;
-        }
-        if (data.error === "authorization_pending") {
-            continue;
-        }
-        if (data.error === "slow_down") {
-            interval += 5000;
-            continue;
-        }
-        if (data.error === "expired_token" || data.error === "access_denied") {
-            throw new Error(data.error_description || data.error);
-        }
-        throw new Error(data.error_description || data.error || "GitHub auth failed");
+async function pollGitHubDeviceTokenOnce(deviceCode) {
+    const clientId = requireGitHubClientId();
+    const body = new URLSearchParams({
+        client_id: clientId,
+        device_code: deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+    });
+    const res = await fetch(GITHUB_ACCESS_TOKEN_URL, {
+        method: "POST",
+        headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body
+    });
+    const data = await res.json();
+    if (data.access_token) {
+        return { status: "ok", token: data.access_token };
     }
-    throw new Error("GitHub device authorization timed out");
+    if (data.error === "authorization_pending") {
+        return { status: "pending" };
+    }
+    if (data.error === "slow_down") {
+        return { status: "slow_down" };
+    }
+    throw new Error(data.error_description || data.error || "GitHub auth failed");
+}
+
+async function saveGitHubToken(token) {
+    await new Promise((resolve) => setGitHubConfig({ token }, resolve));
+    const user = await fetchGitHubUser();
+    await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
+    return { user };
 }
 
 async function githubApi(path, options = {}) {
@@ -238,26 +242,4 @@ async function pushToGitHub(solvedProblem) {
     }
 
     return { path, commitMessage: message };
-}
-
-/**
- * Full connect flow: device auth → store token → fetch user.
- */
-async function connectGitHub() {
-    const device = await startGitHubDeviceFlow();
-    return {
-        userCode: device.user_code,
-        verificationUri: device.verification_uri || "https://github.com/login/device",
-        poll: async () => {
-            const token = await pollGitHubDeviceToken(
-                device.device_code,
-                device.interval,
-                device.expires_in
-            );
-            await new Promise((resolve) => setGitHubConfig({ token }, resolve));
-            const user = await fetchGitHubUser();
-            await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
-            return user;
-        }
-    };
 }

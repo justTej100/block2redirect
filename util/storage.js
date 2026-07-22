@@ -189,23 +189,15 @@ function getLastSolve(callback) {
     getSession(["lastSolve"], (data) => callback(data.lastSolve || null));
 }
 
-/** GitHub config (token + client id stay in local only) */
+/** GitHub config (token stays in local only) */
 function getGitHubConfig(callback) {
-    getLocal([
-        "githubToken",
-        "githubRepo",
-        "githubOwner",
-        "githubAutoPush",
-        "githubUser",
-        "githubClientId"
-    ], (data) => {
+    getLocal(["githubToken", "githubRepo", "githubOwner", "githubAutoPush", "githubUser"], (data) => {
         callback({
             token: data.githubToken || "",
             repo: data.githubRepo || "",
             owner: data.githubOwner || "",
             autoPush: data.githubAutoPush !== false,
-            user: data.githubUser || null,
-            clientId: data.githubClientId || ""
+            user: data.githubUser || null
         });
     });
 }
@@ -217,7 +209,6 @@ function setGitHubConfig(patch, callback) {
     if ("owner" in patch) mapped.githubOwner = patch.owner;
     if ("autoPush" in patch) mapped.githubAutoPush = patch.autoPush;
     if ("user" in patch) mapped.githubUser = patch.user;
-    if ("clientId" in patch) mapped.githubClientId = patch.clientId;
     setLocal(mapped, callback);
 }
 
@@ -236,8 +227,7 @@ function getSheetsConfig(callback) {
         "spreadsheetId",
         "spreadsheetUrl",
         "jobAppGoal",
-        "loggedJobUrls",
-        "googleClientId"
+        "loggedJobUrls"
     ], (data) => {
         callback({
             accessToken: data.googleAccessToken || "",
@@ -245,8 +235,7 @@ function getSheetsConfig(callback) {
             spreadsheetId: data.spreadsheetId || "",
             spreadsheetUrl: data.spreadsheetUrl || "",
             jobAppGoal: Number(data.jobAppGoal) || 5,
-            loggedJobUrls: data.loggedJobUrls || [],
-            clientId: data.googleClientId || ""
+            loggedJobUrls: data.loggedJobUrls || []
         });
     });
 }
@@ -259,7 +248,6 @@ function setSheetsConfig(patch, callback) {
     if ("spreadsheetUrl" in patch) mapped.spreadsheetUrl = patch.spreadsheetUrl;
     if ("jobAppGoal" in patch) mapped.jobAppGoal = patch.jobAppGoal;
     if ("loggedJobUrls" in patch) mapped.loggedJobUrls = patch.loggedJobUrls;
-    if ("clientId" in patch) mapped.googleClientId = patch.clientId;
     setLocal(mapped, callback);
 }
 

@@ -27,26 +27,34 @@ Example:
 
 ## OAuth setup (toolkit features)
 
-Paste client IDs in the extension **Settings** UI. They are stored in `chrome.storage.local` (not in the repo).
+Users only click **Login with GitHub** / **Login with Google**. You (the extension author) register OAuth apps once and put the public client IDs in [`util/constants.js`](util/constants.js):
 
-OAuth **client IDs** are public identifiers. Never put a GitHub/Google **client secret** in the extension — this project uses Device Flow and `chrome.identity` so secrets are not required.
+```js
+const GITHUB_OAUTH_CLIENT_ID = "Iv1....";
+const GOOGLE_OAUTH_CLIENT_ID = "....apps.googleusercontent.com";
+```
+
+Client IDs are public identifiers (safe in source). Never put a **client secret** in the extension.
 
 ### GitHub (Device Flow)
 
 1. GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-2. Homepage URL: `https://github.com` (or your repo)
-3. Authorization callback URL: `http://localhost` (unused for device flow, but required)
-4. Enable Device Flow on the OAuth App if prompted
-5. In Settings → paste the **Client ID** → Save → **Connect GitHub** → enter the device code → pick or create a repo
+2. Homepage URL: your repo URL
+3. Authorization callback URL: `http://localhost` (required but unused for device flow)
+4. Enable **Device Flow**
+5. Paste the Client ID into `GITHUB_OAUTH_CLIENT_ID`
+6. Users: Settings → **Login with GitHub** → enter the code on the opened tab → pick/create a repo
 
 ### Google Sheets
 
 1. Google Cloud Console → create a project → enable **Google Sheets API**
 2. Create an OAuth client ID of type **Chrome Extension**
-3. Use your extension ID from `chrome://extensions` as the application ID
-4. In Settings → paste the client ID → Save → **Connect Google** → paste a Sheet URL → **Link sheet**
+3. Application ID = your extension ID from `chrome://extensions`
+4. Paste the Client ID into `GOOGLE_OAUTH_CLIENT_ID`
+5. Users: Settings → **Login with Google** → link a Sheet URL
 
-Redirect URI used by the extension: `https://<extension-id>.chromiumapp.org/` (from `chrome.identity.getRedirectURL()`).
+Redirect URI: `https://<extension-id>.chromiumapp.org/` (`chrome.identity.getRedirectURL()`).
+
 
 ## How It Works
 

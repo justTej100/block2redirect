@@ -1,7 +1,7 @@
 /**
  * POPUP SCRIPT
  *
- * Quick-access blocking + toolkit actions (push solve / save job / daily dashboard).
+ * Quick-access blocking + daily dashboard.
  */
 
 const blockedSiteInput = document.getElementById("blockedSite");
@@ -9,8 +9,6 @@ const addBlockedSiteButton = document.getElementById("addBlockedSite");
 const blockCurrentSiteButton = document.getElementById("blockCurrentSite");
 const blockedSitesList = document.getElementById("blockedSitesList");
 const statusMessage = document.getElementById("statusMessage");
-const pushLastSolveButton = document.getElementById("pushLastSolve");
-const saveThisJobButton = document.getElementById("saveThisJob");
 const followUpBanner = document.getElementById("followUpBanner");
 
 const PLACEHOLDER_EXAMPLES = [
@@ -182,58 +180,8 @@ async function refreshDashboard() {
     }
 }
 
-async function pushLastSolve() {
-    try {
-        setStatus("Pushing last solve to GitHub...");
-        const result = await sendMessage({ type: "PUSH_LAST_SOLVE" });
-        if (result.pushed) {
-            setStatus(`Pushed: ${result.path || "solution"}`, "success");
-        } else {
-            setStatus("Solve cached. Connect GitHub + select a repo to push.", "info");
-        }
-        refreshDashboard();
-    } catch (err) {
-        setStatus(err.message, "error");
-    }
-}
-
-async function saveThisJob() {
-    getCurrentTab(async (tab) => {
-        if (!tab?.url || !/^https?:/i.test(tab.url)) {
-            setStatus("Open a job posting page first.", "error");
-            return;
-        }
-        const host = getTabHostname(tab.url);
-        const job = {
-            company: host.replace(/^www\./, "").split(".")[0] || "",
-            role: tab.title || "Job",
-            location: "",
-            source: host,
-            link: tab.url.split("?")[0],
-            dateApplied: new Date().toISOString().slice(0, 10),
-            status: "Applied",
-            followUpDate: "",
-            notes: ""
-        };
-        try {
-            setStatus("Saving job...");
-            const result = await sendMessage({ type: "SAVE_JOB", job });
-            if (result.duplicate) {
-                setStatus(`Already logged (${result.reason}). Use settings sheet to review.`, "error");
-                return;
-            }
-            setStatus("Job saved to Google Sheet.", "success");
-            refreshDashboard();
-        } catch (err) {
-            setStatus(err.message, "error");
-        }
-    });
-}
-
 addBlockedSiteButton.onclick = addBlockedSite;
 if (blockCurrentSiteButton) blockCurrentSiteButton.onclick = blockCurrentSite;
-if (pushLastSolveButton) pushLastSolveButton.onclick = pushLastSolve;
-if (saveThisJobButton) saveThisJobButton.onclick = saveThisJob;
 
 blockedSiteInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

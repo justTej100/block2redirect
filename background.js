@@ -321,6 +321,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     new Promise((resolve) => getCodeforcesState(resolve)),
                     new Promise((resolve) => getFollowUpState(resolve))
                 ]);
+                let googleSignedIn = Boolean(sheets.accessToken);
+                try {
+                    await new Promise((resolve, reject) => {
+                        chrome.identity.getAuthToken({ interactive: false }, (token) => {
+                            if (chrome.runtime.lastError || !token) {
+                                reject(new Error("no token"));
+                                return;
+                            }
+                            googleSignedIn = true;
+                            resolve(token);
+                        });
+                    });
+                } catch (_err) {
+                    // not signed in via identity
+                }
                 const weekMs = 7 * 24 * 60 * 60 * 1000;
                 const staleFollowUps = followUps.filter(
                     (e) => e.status === "Applied" && Date.now() - (e.appliedAt || 0) >= weekMs
@@ -330,11 +345,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     githubUser: github.user,
                     githubRepo: github.repo ? `${github.owner}/${github.repo}` : "",
                     githubAutoPush: github.autoPush,
-                    githubClientId: github.clientId || "",
-                    sheetsConnected: Boolean(sheets.accessToken),
+                    githubLoginReady: Boolean(GITHUB_OAUTH_CLIENT_ID),
+                    sheetsConnected: googleSignedIn,
                     spreadsheetId: sheets.spreadsheetId,
                     spreadsheetUrl: sheets.spreadsheetUrl,
-                    googleClientId: sheets.clientId || "",
+                    googleLoginReady: Boolean(chrome.runtime.getManifest().oauth2?.client_id),
                     jobAppGoal: sheets.jobAppGoal,
                     daily,
                     lastSolve,
@@ -346,40 +361,48 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case "GITHUB_START_DEVICE_CODES":
             return reply((async () => {
                 const device = await startGitHubDeviceFlow();
-                // Keep device code in session for poll message
                 await new Promise((resolve) => setSession({
                     githubDeviceCode: device.device_code,
                     githubDeviceInterval: device.interval,
-                    githubDeviceExpires: device.expires_in
+                    githubDeviceExpires: Date.now() + (Number(device.expires_in) || 900) * 1000
                 }, resolve));
+                const verificationUri = device.verification_uri || "https://github.com/login/device";
+                chrome.tabs.create({ url: verificationUri });
                 return {
                     userCode: device.user_code,
-                    verificationUri: device.verification_uri || "https://github.com/login/device"
+                    verificationUri,
+                    interval: device.interval || 5
                 };
             })());
 
-        case "GITHUB_POLL_DEVICE":
+        case "GITHUB_POLL_DEVICE_ONCE":
             return reply((async () => {
                 const sess = await new Promise((resolve) => getSession([
                     "githubDeviceCode",
-                    "githubDeviceInterval",
                     "githubDeviceExpires"
                 ], resolve));
-                if (!sess.githubDeviceCode) throw new Error("No pending GitHub device auth");
-                const token = await pollGitHubDeviceToken(
-                    sess.githubDeviceCode,
-                    sess.githubDeviceInterval,
-                    sess.githubDeviceExpires
-                );
-                await new Promise((resolve) => setGitHubConfig({ token }, resolve));
-                const user = await fetchGitHubUser();
-                await new Promise((resolve) => setGitHubConfig({ user, owner: user.login }, resolve));
+                if (!sess.githubDeviceCode) throw new Error("No pending GitHub device auth — click Login again");
+                if (sess.githubDeviceExpires && Date.now() > sess.githubDeviceExpires) {
+                    throw new Error("GitHub login code expired — click Login again");
+                }
+                const poll = await pollGitHubDeviceTokenOnce(sess.githubDeviceCode);
+                if (poll.status !== "ok") {
+                    return poll;
+                }
+                const result = await saveGitHubToken(poll.token);
                 await new Promise((resolve) => setSession({
                     githubDeviceCode: null,
                     githubDeviceInterval: null,
                     githubDeviceExpires: null
                 }, resolve));
-                return { user };
+                return { status: "ok", user: result.user };
+            })());
+
+        case "GITHUB_SET_PAT":
+            return reply((async () => {
+                const token = (message.token || "").trim();
+                if (!token) throw new Error("Paste a GitHub personal access token");
+                return saveGitHubToken(token);
             })());
 
         case "GITHUB_LIST_REPOS":
@@ -420,10 +443,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             return reply(connectGoogle());
 
         case "GOOGLE_DISCONNECT":
-            return reply((async () => {
-                await new Promise((resolve) => clearGoogleAuth(resolve));
-                return { disconnected: true };
-            })());
+            return reply(disconnectGoogle());
 
         case "SHEETS_LINK":
             return reply(linkSpreadsheet(message.urlOrId));
@@ -447,22 +467,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
                     jobAppGoal: Math.max(1, Number(message.goal) || 5)
                 }, resolve));
                 return { jobAppGoal: Math.max(1, Number(message.goal) || 5) };
-            })());
-
-        case "SET_GITHUB_CLIENT_ID":
-            return reply((async () => {
-                await new Promise((resolve) => setGitHubConfig({
-                    clientId: (message.clientId || "").trim()
-                }, resolve));
-                return { clientId: (message.clientId || "").trim() };
-            })());
-
-        case "SET_GOOGLE_CLIENT_ID":
-            return reply((async () => {
-                await new Promise((resolve) => setSheetsConfig({
-                    clientId: (message.clientId || "").trim()
-                }, resolve));
-                return { clientId: (message.clientId || "").trim() };
             })());
 
         case "POLL_CODEFORCES":

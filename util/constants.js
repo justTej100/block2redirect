@@ -23,6 +23,17 @@ const DEFAULT_SESSION_CONFIG = {
     breakMinutes: 5
 };
 
+/**
+ * OAuth client IDs (public — not secrets).
+ *
+ * Google: Client ID goes in manifest.json → oauth2.client_id (required for getAuthToken).
+ * GitHub: Device Flow Client ID below (enable Device Flow on the OAuth App),
+ *         or paste a PAT in Settings.
+ */
+const GITHUB_OAUTH_CLIENT_ID = "Ov23lii12lMpylL9j6at";
+/** @deprecated Google ID must be in manifest.json oauth2 — kept only as a reminder */
+const GOOGLE_OAUTH_CLIENT_ID = "798095477938-ht113v0idsf0frsesb980vaiuhbgksp2.apps.googleusercontent.com";
+
 const GOOGLE_SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets"
 ].join(" ");

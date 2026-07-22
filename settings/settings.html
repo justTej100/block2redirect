@@ -92,15 +92,15 @@
 		<div class="panel github-panel">
 			<h3>GitHub Sync</h3>
 			<p id="githubStatus" class="status-text">Not connected</p>
-			<div class="row compact">
-				<input id="githubClientIdInput" type="text" placeholder="OAuth client ID" aria-label="GitHub OAuth client ID" autocomplete="off">
-				<button id="githubClientIdSaveBtn" type="button">Save</button>
-			</div>
-			<div class="row compact">
-				<button id="githubConnectBtn" type="button">Connect</button>
-				<button id="githubDisconnectBtn" type="button" class="danger">Disconnect</button>
-			</div>
 			<p id="githubDeviceHint" class="status-text" hidden></p>
+			<div class="row compact">
+				<button id="githubConnectBtn" type="button">Login with GitHub</button>
+				<button id="githubDisconnectBtn" type="button" class="danger">Logout</button>
+			</div>
+			<div class="row compact">
+				<input id="githubPatInput" type="password" placeholder="Or paste GitHub PAT" aria-label="GitHub personal access token" autocomplete="off">
+				<button id="githubPatSaveBtn" type="button" class="secondary">Save PAT</button>
+			</div>
 			<div class="row compact">
 				<select id="githubRepoSelect" aria-label="GitHub repository"></select>
 				<button id="githubRefreshReposBtn" type="button" class="secondary">↻</button>
@@ -124,12 +124,8 @@
 			<h3>Job Tracker</h3>
 			<p id="sheetsStatus" class="status-text">Not connected</p>
 			<div class="row compact">
-				<input id="googleClientIdInput" type="text" placeholder="Google OAuth client ID" aria-label="Google OAuth client ID" autocomplete="off">
-				<button id="googleClientIdSaveBtn" type="button">Save</button>
-			</div>
-			<div class="row compact">
-				<button id="googleConnectBtn" type="button">Connect</button>
-				<button id="googleDisconnectBtn" type="button" class="danger">Disconnect</button>
+				<button id="googleConnectBtn" type="button">Login with Google</button>
+				<button id="googleDisconnectBtn" type="button" class="danger">Logout</button>
 			</div>
 			<div class="row compact">
 				<input id="sheetUrlInput" placeholder="Sheet URL" aria-label="Google Sheet URL">
